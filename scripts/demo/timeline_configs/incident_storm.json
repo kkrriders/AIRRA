@@ -1,0 +1,43 @@
+{
+  "name": "Incident Storm Timeline",
+  "description": "Chaotic scenario with multiple concurrent incidents including LLM-generated variations",
+  "duration_minutes": 20,
+  "incidents": [
+    {
+      "delay_seconds": 0,
+      "type": "predefined",
+      "scenario_id": "pod_crash_loop",
+      "comment": "Bad deployment causes pod crashes"
+    },
+    {
+      "delay_seconds": 60,
+      "type": "llm_generated",
+      "llm_prompt": "Generate a network connectivity incident affecting a microservice. The incident should involve packet loss or DNS resolution failures.",
+      "service_name": "payment-service",
+      "expected_severity": "high",
+      "comment": "LLM generates network-related incident"
+    },
+    {
+      "delay_seconds": 180,
+      "type": "predefined",
+      "scenario_id": "cpu_spike_traffic_surge",
+      "comment": "Traffic surge compounds the existing issues"
+    },
+    {
+      "delay_seconds": 240,
+      "type": "llm_generated",
+      "llm_prompt": "Generate a disk space exhaustion incident. Logs or data have filled up the disk to 98% capacity.",
+      "service_name": "payment-service",
+      "expected_severity": "critical",
+      "comment": "LLM generates disk space incident"
+    },
+    {
+      "delay_seconds": 360,
+      "type": "llm_generated",
+      "llm_prompt": "Generate a security-related incident involving elevated error rates from authentication failures or suspicious API access patterns.",
+      "service_name": "auth-service",
+      "expected_severity": "high",
+      "comment": "LLM generates security incident"
+    }
+  ]
+}

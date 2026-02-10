@@ -1,0 +1,121 @@
+airra/
+├── README.md                          # Comprehensive project overview
+├── ARCHITECTURE.md                    # System design document
+├── DEPLOYMENT.md                      # Setup and deployment guide
+├── pyproject.toml                     # Poetry dependencies
+├── docker-compose.yml                 # Full stack orchestration
+├── .env.example                       # Configuration template
+├── .gitignore
+│
+├── docs/                              # Academic documentation
+│   ├── thesis/
+│   │   ├── 01-introduction.md
+│   │   ├── 02-literature-review.md
+│   │   ├── 03-system-design.md
+│   │   ├── 04-implementation.md
+│   │   ├── 05-testing-validation.md
+│   │   └── 06-results-conclusion.md
+│   ├── diagrams/                      # Architecture diagrams
+│   │   ├── system-architecture.png
+│   │   ├── sequence-diagrams.png
+│   │   └── er-diagram.png
+│   └── api/                           # API documentation
+│       └── openapi.json
+│
+├── backend/
+│   ├── app/
+│   │   ├── __init__.py
+│   │   ├── main.py                    # FastAPI application entry
+│   │   ├── config.py                  # Configuration management
+│   │   │
+│   │   ├── core/                      # Core business logic
+│   │   │   ├── perception/            # Signal ingestion & analysis
+│   │   │   │   ├── metric_analyzer.py
+│   │   │   │   ├── anomaly_detector.py
+│   │   │   │   └── signal_correlator.py
+│   │   │   │
+│   │   │   ├── reasoning/             # LLM-powered reasoning
+│   │   │   │   ├── hypothesis_generator.py
+│   │   │   │   ├── evidence_evaluator.py
+│   │   │   │   └── confidence_scorer.py
+│   │   │   │
+│   │   │   ├── decision/              # Decision making
+│   │   │   │   ├── action_selector.py
+│   │   │   │   ├── risk_analyzer.py
+│   │   │   │   └── approval_handler.py
+│   │   │   │
+│   │   │   └── execution/             # Action execution
+│   │   │       ├── executor.py
+│   │   │       ├── dry_run.py
+│   │   │       └── feedback_collector.py
+│   │   │
+│   │   ├── models/                    # Database models
+│   │   │   ├── incident.py
+│   │   │   ├── hypothesis.py
+│   │   │   ├── action.py
+│   │   │   └── feedback.py
+│   │   │
+│   │   ├── schemas/                   # Pydantic schemas
+│   │   │   ├── incident.py
+│   │   │   ├── hypothesis.py
+│   │   │   └── action.py
+│   │   │
+│   │   ├── api/                       # API routes
+│   │   │   ├── v1/
+│   │   │   │   ├── incidents.py
+│   │   │   │   ├── actions.py
+│   │   │   │   ├── approvals.py
+│   │   │   │   └── metrics.py
+│   │   │
+│   │   ├── services/                  # External integrations
+│   │   │   ├── prometheus_client.py
+│   │   │   ├── llm_client.py
+│   │   │   └── kubernetes_client.py
+│   │   │
+│   │   └── utils/
+│   │       ├── logging.py
+│   │       └── patterns.py
+│   │
+│   ├── tests/
+│   │   ├── unit/
+│   │   ├── integration/
+│   │   └── e2e/
+│   │
+│   └── alembic/                       # Database migrations
+│       └── versions/
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── IncidentList.tsx
+│   │   │   ├── HypothesisCard.tsx
+│   │   │   ├── ApprovalPanel.tsx
+│   │   │   └── MetricsChart.tsx
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── HomePage.tsx
+│   │   │   ├── IncidentDetailPage.tsx
+│   │   │   └── AnalyticsPage.tsx
+│   │   │
+│   │   ├── services/
+│   │   │   └── api.ts
+│   │   │
+│   │   └── types/
+│   │       └── index.ts
+│   │
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── monitoring/                        # Demo monitoring stack
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   ├── grafana/
+│   │   └── dashboards/
+│   └── sample-app/                    # Instrumented demo app
+│       └── buggy-service/             # Intentionally buggy for demo
+│
+└── scripts/
+    ├── setup.sh                       # Initial setup
+    ├── seed_data.py                   # Sample data for demo
+    └── generate_incident.py           # Trigger demo incidents

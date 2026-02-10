@@ -1,0 +1,41 @@
+{
+  "name": "Gradual Escalation Timeline",
+  "description": "Starts with minor issues that gradually escalate to critical incidents",
+  "duration_minutes": 25,
+  "incidents": [
+    {
+      "delay_seconds": 0,
+      "type": "llm_generated",
+      "llm_prompt": "Generate a minor performance degradation incident with low severity. Response times are slightly elevated (2x baseline) but service is functional.",
+      "service_name": "payment-service",
+      "expected_severity": "low",
+      "comment": "Day starts with minor slowness"
+    },
+    {
+      "delay_seconds": 300,
+      "type": "llm_generated",
+      "llm_prompt": "Generate a medium severity incident where the previous performance issue has worsened. Response times are now 5x baseline and error rate has increased to 5%.",
+      "service_name": "payment-service",
+      "expected_severity": "medium",
+      "comment": "Issue escalates - users reporting problems"
+    },
+    {
+      "delay_seconds": 600,
+      "type": "predefined",
+      "scenario_id": "latency_spike_database",
+      "comment": "Root cause identified - database queries are the bottleneck"
+    },
+    {
+      "delay_seconds": 900,
+      "type": "predefined",
+      "scenario_id": "memory_leak_gradual",
+      "comment": "Memory leak from database connection pool leak"
+    },
+    {
+      "delay_seconds": 1200,
+      "type": "predefined",
+      "scenario_id": "pod_crash_loop",
+      "comment": "Critical: Pods start crashing from OOM"
+    }
+  ]
+}

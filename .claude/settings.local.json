@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(find:*)",
+      "Bash(claude install)",
+      "Bash(~/.bashrc)",
+      "Bash(source ~/.bashrc)",
+      "Bash(wc -l:*)",
+      "Bash(for file in /mnt/c/Users/karti/AIRRA/backend/app/core/perception/*.py /mnt/c/Users/karti/AIRRA/backend/app/core/reasoning/*.py /mnt/c/Users/karti/AIRRA/backend/app/core/decision/*.py /mnt/c/Users/karti/AIRRA/backend/app/core/execution/*.py /mnt/c/Users/karti/AIRRA/backend/app/services/*.py /mnt/c/Users/karti/AIRRA/backend/app/api/v1/*.py)",
+      "Bash(do wc -l \"$file\")",
+      "Bash(done)",
+      "Bash(poetry run pytest:*)",
+      "Bash(dir \"C:\\\\Users\\\\karti\\\\AIRRA\")",
+      "Bash(dir:*)",
+      "Bash(curl -s https://openrouter.ai/api/v1/models -H \"Authorization: Bearer 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\" )",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(grep:*)",
+      "Bash(alembic init:*)",
+      "Bash(test:*)",
+      "Bash(alembic revision:*)"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}

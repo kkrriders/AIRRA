@@ -1,0 +1,31 @@
+{
+  "name": "Busy Day Timeline",
+  "description": "Simulates a busy day with multiple incidents at different times",
+  "duration_minutes": 30,
+  "incidents": [
+    {
+      "delay_seconds": 0,
+      "type": "predefined",
+      "scenario_id": "memory_leak_gradual",
+      "comment": "Morning starts with memory leak from overnight batch job"
+    },
+    {
+      "delay_seconds": 300,
+      "type": "predefined",
+      "scenario_id": "cpu_spike_traffic_surge",
+      "comment": "Mid-morning traffic surge as users log in"
+    },
+    {
+      "delay_seconds": 600,
+      "type": "predefined",
+      "scenario_id": "latency_spike_database",
+      "comment": "Database slows down from accumulated queries"
+    },
+    {
+      "delay_seconds": 900,
+      "type": "predefined",
+      "scenario_id": "dependency_failure_timeout",
+      "comment": "External payment gateway starts timing out"
+    }
+  ]
+}

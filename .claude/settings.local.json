@@ -21,7 +21,13 @@
       "Bash(grep:*)",
       "Bash(alembic init:*)",
       "Bash(test:*)",
-      "Bash(alembic revision:*)"
+      "Bash(alembic revision:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(docker exec:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(curl:*)",
+      "Bash(docker-compose restart:*)"
     ]
   },
   "outputStyle": "Explanatory"

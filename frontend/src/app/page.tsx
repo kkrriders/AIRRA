@@ -1,207 +1,407 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  Clock, 
-  Activity, 
-  ChevronRight,
+/**
+ * AIRRA Dashboard - Home Page
+ *
+ * Main dashboard showing system overview and quick links
+ */
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { apiClient } from '@/lib/api-client';
+import {
+  Activity,
+  Users,
+  Bell,
+  TrendingUp,
   ArrowRight,
+  AlertCircle,
+  CheckCircle,
+  Clock,
   Zap,
-  ShieldCheck
-} from "lucide-react";
-import { Navbar } from "@/components/layout/Navbar";
+} from 'lucide-react';
+
+async function getDashboardStats() {
+  const [incidentsRes, notificationsRes, onCallRes] = await Promise.all([
+    apiClient.get('/incidents/', { params: { page: 1, page_size: 5 } }),
+    apiClient.get('/notifications/stats/summary'),
+    apiClient.get('/on-call/current/all'),
+  ]);
+
+  return {
+    incidents: incidentsRes.data,
+    notificationStats: notificationsRes.data,
+    onCallEngineers: onCallRes.data,
+  };
+}
 
 export default function HomePage() {
-  const { data: incidents, isLoading: isLoadingIncidents } = useQuery({
-    queryKey: ["incidents"],
-    queryFn: () => api.getIncidents({ page: 1, page_size: 10 }),
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: getDashboardStats,
+    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchIntervalInBackground: false, // Stop refreshing when tab is hidden
+    retry: 3, // Retry failed requests 3 times
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
   });
 
-  const { data: pendingApprovals, isLoading: isLoadingApprovals } = useQuery({
-    queryKey: ["pending-approvals"],
-    queryFn: () => api.getPendingApprovals(),
-  });
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Activity className="h-12 w-12 animate-pulse mx-auto mb-4 text-blue-600" />
+          <p className="text-lg font-medium">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const stats = {
-    total: incidents?.total || 0,
-    detected: incidents?.items.filter((i) => i.status === "detected").length || 0,
-    resolved: incidents?.items.filter((i) => i.status === "resolved").length || 0,
-    pendingApproval: pendingApprovals?.length || 0,
-  };
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Card className="max-w-md">
+          <CardHeader>
+            <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-2" />
+            <CardTitle className="text-center">Connection Error</CardTitle>
+            <CardDescription className="text-center">
+              Unable to connect to AIRRA backend. Please ensure the backend is running.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <p className="text-sm text-gray-600 mb-4">
+              Expected backend URL: {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}
+            </p>
+            <Button onClick={() => refetch()} disabled={isLoading}>
+              {isLoading ? 'Retrying...' : 'Retry'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const { incidents, notificationStats, onCallEngineers } = data || {};
+  const recentIncidents = incidents?.items || [];
+  const stats = notificationStats || {};
+  const onCall = onCallEngineers || [];
+
+  // Calculate open incidents
+  const openIncidents =
+    recentIncidents.filter((i: any) => ['open', 'investigating'].includes(i.status)).length || 0;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Navigation */}
-      <Navbar />
-
-      {/* Hero Section */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="relative mb-12">
-          <div className="absolute -left-4 -top-4 w-24 h-24 bg-primary/5 rounded-full blur-3xl" />
-          <h2 className="text-4xl font-extrabold tracking-tight lg:text-5xl mb-4 relative">
-            Autonomous Response <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-600">
-              Intelligence Agent
-            </span>
-          </h2>
-          <p className="text-xl text-muted-foreground max-w-[700px]">
-            AI-powered incident management that monitors, analyzes, and resolves infrastructure issues automatically.
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 py-12">
+        {/* Hero Section */}
+        <div className="mb-12">
+          <h1 className="text-4xl font-extrabold text-gray-900 mb-4">
+            Autonomous Incident Response
+          </h1>
+          <p className="text-xl text-gray-600">
+            AI-powered incident management with intelligent engineer notification
           </p>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
-          {[
-            { label: "Total Incidents", value: stats.total, icon: Activity, color: "text-blue-500", bg: "bg-blue-500/10" },
-            { label: "Active Now", value: stats.detected, icon: AlertTriangle, color: "text-orange-500", bg: "bg-orange-500/10" },
-            { label: "Pending Review", value: stats.pendingApproval, icon: Clock, color: "text-yellow-500", bg: "bg-yellow-500/10" },
-            { label: "Successfully Resolved", value: stats.resolved, icon: CheckCircle, color: "text-green-500", bg: "bg-green-500/10" },
-          ].map((stat, i) => (
-            <Card key={i} className="border-border/50 bg-card/50 backdrop-blur-sm transition-all hover:border-primary/50">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`p-2 rounded-lg ${stat.bg}`}>
-                    <stat.icon className={`h-5 w-5 ${stat.color}`} />
+        {/* Key Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-gray-600">
+                  Active Incidents
+                </CardTitle>
+                <Activity className="h-5 w-5 text-blue-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-gray-900">{openIncidents}</div>
+              <p className="text-xs text-gray-500 mt-1">Currently being handled</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-gray-600">On-Call</CardTitle>
+                <Users className="h-5 w-5 text-green-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-gray-900">{onCall.length}</div>
+              <p className="text-xs text-gray-500 mt-1">Engineers available</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-gray-600">
+                  Notifications
+                </CardTitle>
+                <Bell className="h-5 w-5 text-purple-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-gray-900">
+                {stats.total_acknowledged || 0}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {stats.total_sent || 0} sent total
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-gray-600">
+                  SLA Compliance
+                </CardTitle>
+                <TrendingUp className="h-5 w-5 text-orange-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-gray-900">
+                {stats.sla_compliance_rate !== null && stats.sla_compliance_rate !== undefined
+                  ? `${Math.round(stats.sla_compliance_rate * 100)}%`
+                  : 'N/A'}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Response time SLA</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Links */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <Link href="/incidents" className="group">
+            <Card className="h-full hover:shadow-lg transition-all hover:border-blue-300">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 rounded-lg p-3">
+                      <Activity className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <CardTitle>Incident Management</CardTitle>
+                      <CardDescription>View and manage active incidents</CardDescription>
+                    </div>
                   </div>
-                  <Badge variant="outline" className="font-mono">Live</Badge>
+                  <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
                 </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{stat.label}</p>
-                  <p className="text-3xl font-bold tracking-tight">{stat.value}</p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Open:</span>
+                    <Badge className="bg-red-100 text-red-800">{openIncidents}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Total:</span>
+                    <span className="font-medium">{incidents?.total || 0}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          ))}
+          </Link>
+
+          <Link href="/on-call" className="group">
+            <Card className="h-full hover:shadow-lg transition-all hover:border-green-300">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-green-100 rounded-lg p-3">
+                      <Users className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div>
+                      <CardTitle>On-Call Schedule</CardTitle>
+                      <CardDescription>Current on-call engineers</CardDescription>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-green-600 transition-colors" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Total On-Call:</span>
+                    <Badge className="bg-green-100 text-green-800">{onCall.length}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Primary:</span>
+                    <span className="font-medium">
+                      {onCall.filter((e: any) => e.priority === 'PRIMARY').length}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/notifications" className="group">
+            <Card className="h-full hover:shadow-lg transition-all hover:border-purple-300">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-purple-100 rounded-lg p-3">
+                      <Bell className="h-6 w-6 text-purple-600" />
+                    </div>
+                    <div>
+                      <CardTitle>Notifications</CardTitle>
+                      <CardDescription>Track engineer notifications</CardDescription>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-purple-600 transition-colors" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Acknowledged:</span>
+                    <Badge className="bg-purple-100 text-purple-800">
+                      {stats.total_acknowledged || 0}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Avg Response:</span>
+                    <span className="font-medium">
+                      {stats.average_response_time_seconds
+                        ? `${Math.round(stats.average_response_time_seconds / 60)}m`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/analytics" className="group">
+            <Card className="h-full hover:shadow-lg transition-all hover:border-orange-300">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-orange-100 rounded-lg p-3">
+                      <TrendingUp className="h-6 w-6 text-orange-600" />
+                    </div>
+                    <div>
+                      <CardTitle>Analytics</CardTitle>
+                      <CardDescription>System performance metrics</CardDescription>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-gray-400 group-hover:text-orange-600 transition-colors" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">SLA Met:</span>
+                    <span className="font-medium">
+                      {stats.sla_compliance_rate
+                        ? `${Math.round(stats.sla_compliance_rate * 100)}%`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Escalation Rate:</span>
+                    <span className="font-medium">
+                      {stats.escalation_rate
+                        ? `${Math.round(stats.escalation_rate * 100)}%`
+                        : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
-        {/* Main Dashboard Area */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Recent Incidents */}
-          <Card className="lg:col-span-2 border-border/50 bg-card/50">
-            <CardHeader className="flex flex-row items-center justify-between">
+        {/* Recent Incidents */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Critical Incidents</CardTitle>
-                <CardDescription>Recently detected system anomalies</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-yellow-600" />
+                  Recent Incidents
+                </CardTitle>
+                <CardDescription>Latest 5 incidents across all services</CardDescription>
               </div>
               <Link href="/incidents">
-                <Button variant="outline" size="sm">View all</Button>
+                <Button variant="outline" size="sm">
+                  View All
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
               </Link>
-            </CardHeader>
-            <CardContent>
-              {isLoadingIncidents ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-16 w-full animate-pulse bg-muted rounded-lg" />
-                  ))}
-                </div>
-              ) : incidents?.items.length ? (
-                <div className="space-y-1">
-                  {incidents.items.slice(0, 5).map((incident) => (
+            </div>
+          </CardHeader>
+          <CardContent>
+            {recentIncidents.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <CheckCircle className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                <p className="text-lg font-medium">No Active Incidents</p>
+                <p className="text-sm mt-2">All systems operational</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentIncidents.map((incident: any) => {
+                  const severityColors = {
+                    critical: 'bg-red-600',
+                    high: 'bg-orange-600',
+                    medium: 'bg-yellow-600',
+                    low: 'bg-blue-600',
+                  };
+
+                  const statusColors = {
+                    open: 'bg-red-100 text-red-800',
+                    investigating: 'bg-yellow-100 text-yellow-800',
+                    mitigating: 'bg-blue-100 text-blue-800',
+                    resolved: 'bg-green-100 text-green-800',
+                    closed: 'bg-gray-100 text-gray-800',
+                  };
+
+                  return (
                     <Link
                       key={incident.id}
                       href={`/incidents/${incident.id}`}
-                      className="flex items-center justify-between p-4 rounded-xl hover:bg-muted/50 transition-colors group"
+                      className="block border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
                     >
-                      <div className="flex items-center gap-4">
-                        <div className={`w-2 h-2 rounded-full ${
-                          incident.severity === 'critical' ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 
-                          incident.severity === 'high' ? 'bg-orange-500' : 'bg-yellow-500'
-                        }`} />
-                        <div>
-                          <p className="font-semibold text-sm group-hover:text-primary transition-colors">{incident.title}</p>
-                          <p className="text-xs text-muted-foreground">{incident.affected_service} • {new Date(incident.created_at).toLocaleTimeString()}</p>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3 flex-1">
+                          <div
+                            className={`w-2 h-2 rounded-full mt-2 ${
+                              severityColors[incident.severity as keyof typeof severityColors]
+                            }`}
+                          />
+                          <div className="flex-1">
+                            <p className="font-semibold text-gray-900">{incident.title}</p>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {incident.affected_service}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge
+                            className={statusColors[incident.status as keyof typeof statusColors]}
+                          >
+                            {incident.status}
+                          </Badge>
+                          <div className="flex items-center gap-1 text-xs text-gray-500">
+                            <Clock className="h-3 w-3" />
+                            <span>
+                              {new Date(incident.detected_at).toLocaleDateString()}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
                     </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed rounded-2xl bg-muted/20">
-                  <Activity className="h-8 w-8 text-muted-foreground mx-auto mb-3 opacity-20" />
-                  <p className="text-sm text-muted-foreground">All systems operational</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Pending Approvals */}
-          <Card className="border-border/50 bg-card/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                Approvals
-                {stats.pendingApproval > 0 && (
-                  <Badge variant="destructive" className="animate-pulse">{stats.pendingApproval}</Badge>
-                )}
-              </CardTitle>
-              <CardDescription>Actions requiring authorization</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingApprovals ? (
-                <div className="space-y-4">
-                  {[1, 2].map((i) => (
-                    <div key={i} className="h-20 w-full animate-pulse bg-muted rounded-lg" />
-                  ))}
-                </div>
-              ) : pendingApprovals?.length ? (
-                <div className="space-y-4">
-                  {pendingApprovals.slice(0, 3).map((action) => (
-                    <div
-                      key={action.id}
-                      className="p-4 rounded-xl border border-border/50 bg-background/50 space-y-3"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-semibold text-sm">{action.name}</p>
-                          <p className="text-xs text-muted-foreground">{action.target_service}</p>
-                        </div>
-                        <Badge variant={action.risk_level === 'high' || action.risk_level === 'critical' ? 'destructive' : 'secondary'} className="text-[10px]">
-                          {action.risk_level}
-                        </Badge>
-                      </div>
-                      <Link href="/approvals" className="block">
-                        <Button variant="secondary" size="sm" className="w-full h-8 text-xs gap-2">
-                          Review Action
-                          <ArrowRight className="h-3 w-3" />
-                        </Button>
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed rounded-2xl bg-muted/20">
-                  <ShieldCheck className="h-8 w-8 text-muted-foreground mx-auto mb-3 opacity-20" />
-                  <p className="text-sm text-muted-foreground">No pending safety reviews</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Feature Grid */}
-        <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { title: "AI Analysis", desc: "LLM-based hypothesis generation for lightning-fast RCA.", icon: Zap },
-            { title: "Safe Execution", desc: "Human-in-the-loop validation for all high-risk remediation.", icon: ShieldCheck },
-            { title: "Smart Observability", desc: "Native Prometheus integration with anomaly detection.", icon: Activity },
-          ].map((feature, i) => (
-            <div key={i} className="p-6 rounded-2xl border border-border/50 bg-card/30 hover:bg-card/50 transition-colors">
-              <div className="bg-primary/10 w-10 h-10 rounded-lg flex items-center justify-center mb-4">
-                <feature.icon className="h-5 w-5 text-primary" />
+                  );
+                })}
               </div>
-              <h3 className="font-bold mb-2">{feature.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{feature.desc}</p>
-            </div>
-          ))}
-        </div>
-      </main>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

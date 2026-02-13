@@ -6,11 +6,12 @@ Senior Engineering Note:
 - Separate schemas for create/update/response
 - ConfigDict for ORM integration
 """
+import re
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.incident import IncidentSeverity, IncidentStatus
 
@@ -81,6 +82,26 @@ class IncidentListResponse(BaseModel):
     page: int = Field(..., ge=1)
     page_size: int = Field(..., ge=1, le=100)
     pages: int = Field(..., ge=0)
+
+
+class IncidentFilter(BaseModel):
+    """Schema for filtering incidents with strict validation."""
+
+    status: Optional[IncidentStatus] = None
+    service: Optional[str] = Field(None, min_length=1, max_length=255)
+
+    @field_validator("service")
+    @classmethod
+    def validate_service_name(cls, v: Optional[str]) -> Optional[str]:
+        """Validate service name contains only safe characters."""
+        if v is None:
+            return v
+        # Allow alphanumeric, hyphens, underscores only
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError(
+                "Service name must contain only alphanumeric characters, hyphens, and underscores"
+            )
+        return v
 
 
 # Rebuild model to resolve forward references

@@ -11,12 +11,46 @@ Senior Engineering Note:
 """
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Any, Optional
 
 from app.core.execution.base import ActionExecutor, ExecutionResult, ExecutionStatus
 
 logger = logging.getLogger(__name__)
+
+# Kubernetes resource name validation pattern
+# Must consist of lowercase alphanumeric characters, '-', or '.'
+# Must start and end with an alphanumeric character
+K8S_NAME_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$")
+K8S_MAX_NAME_LENGTH = 253
+
+
+def validate_k8s_resource_name(name: str, field_name: str = "resource") -> tuple[bool, Optional[str]]:
+    """
+    Validate a Kubernetes resource name.
+
+    Args:
+        name: The resource name to validate
+        field_name: Name of the field for error messages
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not name:
+        return False, f"{field_name} cannot be empty"
+
+    if len(name) > K8S_MAX_NAME_LENGTH:
+        return False, f"{field_name} must be {K8S_MAX_NAME_LENGTH} characters or less (got {len(name)})"
+
+    if not K8S_NAME_PATTERN.match(name):
+        return (
+            False,
+            f"{field_name} must consist of lowercase alphanumeric characters, '-', or '.', "
+            f"and must start and end with an alphanumeric character (got: {name})",
+        )
+
+    return True, None
 
 
 class KubernetesPodRestartExecutor(ActionExecutor):
@@ -60,7 +94,36 @@ class KubernetesPodRestartExecutor(ActionExecutor):
             deployment = parameters.get("deployment", target)
             pod_name = parameters.get("pod_name")
 
-            # Validate before execution
+            # Validate Kubernetes resource names to prevent injection
+            is_valid, error_msg = validate_k8s_resource_name(namespace, "namespace")
+            if not is_valid:
+                return self._create_result(
+                    status=ExecutionStatus.FAILED,
+                    message=f"Invalid namespace: {error_msg}",
+                    started_at=started_at,
+                    error=error_msg,
+                )
+
+            is_valid, error_msg = validate_k8s_resource_name(deployment, "deployment")
+            if not is_valid:
+                return self._create_result(
+                    status=ExecutionStatus.FAILED,
+                    message=f"Invalid deployment name: {error_msg}",
+                    started_at=started_at,
+                    error=error_msg,
+                )
+
+            if pod_name:
+                is_valid, error_msg = validate_k8s_resource_name(pod_name, "pod_name")
+                if not is_valid:
+                    return self._create_result(
+                        status=ExecutionStatus.FAILED,
+                        message=f"Invalid pod name: {error_msg}",
+                        started_at=started_at,
+                        error=error_msg,
+                    )
+
+            # Validate deployment state before execution
             is_valid, error_msg = await self.validate(target, parameters)
             if not is_valid:
                 return self._create_result(
@@ -178,16 +241,26 @@ class KubernetesPodRestartExecutor(ActionExecutor):
         Validate pod restart is safe.
 
         Checks:
-        1. Multiple replicas exist (don't restart if only 1)
-        2. Deployment exists
-        3. No active rollout
+        1. Resource names are valid Kubernetes identifiers
+        2. Multiple replicas exist (don't restart if only 1)
+        3. Deployment exists
+        4. No active rollout
         """
         try:
             namespace = parameters.get("namespace", "default")
             deployment = parameters.get("deployment", target)
 
+            # Validate resource names (done in execute() but good to double-check)
+            is_valid, error_msg = validate_k8s_resource_name(namespace, "namespace")
+            if not is_valid:
+                return False, error_msg
+
+            is_valid, error_msg = validate_k8s_resource_name(deployment, "deployment")
+            if not is_valid:
+                return False, error_msg
+
             if self.dry_run:
-                # Skip validation in dry-run
+                # Skip cluster state validation in dry-run
                 return True, None
 
             try:
@@ -287,7 +360,26 @@ class KubernetesScaleExecutor(ActionExecutor):
             deployment = parameters.get("deployment", target)
             target_replicas = parameters.get("replicas", 2)
 
-            # Validate
+            # Validate Kubernetes resource names to prevent injection
+            is_valid, error_msg = validate_k8s_resource_name(namespace, "namespace")
+            if not is_valid:
+                return self._create_result(
+                    status=ExecutionStatus.FAILED,
+                    message=f"Invalid namespace: {error_msg}",
+                    started_at=started_at,
+                    error=error_msg,
+                )
+
+            is_valid, error_msg = validate_k8s_resource_name(deployment, "deployment")
+            if not is_valid:
+                return self._create_result(
+                    status=ExecutionStatus.FAILED,
+                    message=f"Invalid deployment name: {error_msg}",
+                    started_at=started_at,
+                    error=error_msg,
+                )
+
+            # Validate deployment state
             is_valid, error_msg = await self.validate(target, parameters)
             if not is_valid:
                 return self._create_result(
@@ -386,6 +478,19 @@ class KubernetesScaleExecutor(ActionExecutor):
         parameters: dict[str, Any],
     ) -> tuple[bool, Optional[str]]:
         """Validate scale operation is safe."""
+        # Validate resource names
+        namespace = parameters.get("namespace", "default")
+        deployment = parameters.get("deployment", target)
+
+        is_valid, error_msg = validate_k8s_resource_name(namespace, "namespace")
+        if not is_valid:
+            return False, error_msg
+
+        is_valid, error_msg = validate_k8s_resource_name(deployment, "deployment")
+        if not is_valid:
+            return False, error_msg
+
+        # Validate replica counts
         target_replicas = parameters.get("replicas", 2)
         min_replicas = parameters.get("min_replicas", 1)
         max_replicas = parameters.get("max_replicas", 10)

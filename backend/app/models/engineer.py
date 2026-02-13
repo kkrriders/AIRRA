@@ -17,6 +17,7 @@ from app.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.engineer_review import EngineerReview
+    from app.models.on_call_schedule import OnCallSchedule
 
 
 class EngineerStatus(str, enum.Enum):
@@ -114,6 +115,12 @@ class Engineer(Base, TimestampMixin):
         back_populates="engineer",
         cascade="all, delete-orphan",
         order_by="desc(EngineerReview.assigned_at)",
+    )
+    on_call_schedules: Mapped[list["OnCallSchedule"]] = relationship(
+        "OnCallSchedule",
+        back_populates="engineer",
+        cascade="all, delete-orphan",
+        order_by="desc(OnCallSchedule.start_time)",
     )
 
     # Indexes for common queries

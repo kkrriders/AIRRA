@@ -7,9 +7,11 @@ Senior Engineering Note:
 - Evidence-based ranking
 - Structured output for consistency
 - LLM = reasoning assistant, NOT controller
+- Input sanitization prevents prompt injection attacks
 """
 import logging
-from typing import Optional
+import re
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +20,58 @@ from app.services.dependency_graph import get_dependency_graph
 from app.services.llm_client import LLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
+
+# Maximum length for context values to prevent prompt overflow
+MAX_CONTEXT_VALUE_LENGTH = 500
+
+
+def sanitize_context_value(value: Any) -> str:
+    """
+    Sanitize user-provided context values to prevent prompt injection.
+
+    Removes potential prompt injection patterns and limits length.
+
+    Args:
+        value: The value to sanitize (will be converted to string)
+
+    Returns:
+        Sanitized string safe for inclusion in LLM prompts
+    """
+    if value is None:
+        return ""
+
+    # Convert to string
+    if isinstance(value, (list, tuple)):
+        # For lists, join with commas and sanitize each item
+        value_str = ", ".join(str(item) for item in value)
+    else:
+        value_str = str(value)
+
+    # Remove potential prompt injection patterns
+    # Remove markdown code blocks
+    value_str = re.sub(r"```[^`]*```", "[code block removed]", value_str)
+
+    # Remove potential model control tokens
+    dangerous_patterns = [
+        r"</s>",  # End of sequence token
+        r"<\|",  # Special tokens
+        r"\|\>",
+        r"<\|endoftext\|>",
+        r"<\|im_start\|>",
+        r"<\|im_end\|>",
+    ]
+    for pattern in dangerous_patterns:
+        value_str = re.sub(pattern, "", value_str, flags=re.IGNORECASE)
+
+    # Remove excessive newlines (replace multiple newlines with single space)
+    value_str = re.sub(r"\n{3,}", "\n\n", value_str)
+
+    # Limit length to prevent prompt overflow
+    if len(value_str) > MAX_CONTEXT_VALUE_LENGTH:
+        value_str = value_str[:MAX_CONTEXT_VALUE_LENGTH] + "... [truncated]"
+
+    # Strip whitespace
+    return value_str.strip()
 
 
 class Evidence(BaseModel):
@@ -328,18 +382,19 @@ Anomaly #{i}:
 """
             anomaly_descriptions.append(desc.strip())
 
-        # Build full prompt
+        # Build full prompt (sanitize service_name to prevent injection)
+        safe_service_name = sanitize_context_value(service_name)
         prompt_parts = [
             f"## Incident Analysis Request",
             f"",
-            f"**Service:** {service_name}",
+            f"**Service:** {safe_service_name}",
             f"",
             f"## Detected Anomalies",
             "",
         ]
         prompt_parts.extend(anomaly_descriptions)
 
-        # Add service context if available
+        # Add service context if available (with sanitization to prevent prompt injection)
         if service_context:
             prompt_parts.extend(
                 [
@@ -349,14 +404,30 @@ Anomaly #{i}:
                 ]
             )
             if "dependencies" in service_context:
-                deps = ", ".join(service_context["dependencies"])
+                deps_raw = service_context["dependencies"]
+                # Sanitize dependencies list
+                if isinstance(deps_raw, (list, tuple)):
+                    deps = ", ".join(sanitize_context_value(dep) for dep in deps_raw)
+                else:
+                    deps = sanitize_context_value(deps_raw)
                 prompt_parts.append(f"**Dependencies:** {deps}")
+
             if "recent_deployments" in service_context:
-                prompt_parts.append(
-                    f"**Recent Deployments:** {service_context['recent_deployments']}"
-                )
+                deployments = sanitize_context_value(service_context["recent_deployments"])
+                prompt_parts.append(f"**Recent Deployments:** {deployments}")
+
             if "tier" in service_context:
-                prompt_parts.append(f"**Service Tier:** {service_context['tier']}")
+                tier = sanitize_context_value(service_context["tier"])
+                prompt_parts.append(f"**Service Tier:** {tier}")
+
+            # Handle any additional context fields
+            for key, value in service_context.items():
+                if key not in ["dependencies", "recent_deployments", "tier"]:
+                    sanitized_value = sanitize_context_value(value)
+                    if sanitized_value:  # Only add if non-empty after sanitization
+                        # Capitalize first letter of key and replace underscores
+                        formatted_key = key.replace("_", " ").title()
+                        prompt_parts.append(f"**{formatted_key}:** {sanitized_value}")
 
         # Add task instruction
         prompt_parts.extend(

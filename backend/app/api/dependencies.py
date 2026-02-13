@@ -16,24 +16,26 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def verify_api_key(
     api_key: str | None = Security(api_key_header),
-) -> str | None:
+) -> str:
     """
     Verify the API key from the X-API-Key header.
 
-    In development with no key configured, authentication is skipped.
-    In production, a valid API key is always required.
+    API key is always required for security. If you need to disable
+    authentication for development/testing, set a development key in .env
+    rather than leaving it empty.
     """
     configured_key = settings.api_key.get_secret_value()
 
-    # If no API key is configured, skip auth (development only)
+    # Always require API key to be configured
     if not configured_key:
-        if settings.environment == "production":
-            logger.error("No API key configured in production — rejecting all requests")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Server misconfiguration: authentication not set up",
-            )
-        return None
+        logger.error(
+            "API key not configured. Set AIRRA_API_KEY in environment. "
+            "For development, use a test key like 'dev-test-key-12345'"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server misconfiguration: API key not configured",
+        )
 
     if not api_key:
         raise HTTPException(
@@ -43,7 +45,7 @@ async def verify_api_key(
 
     # Constant-time comparison to prevent timing attacks
     if not secrets.compare_digest(api_key, configured_key):
-        logger.warning("Invalid API key attempt")
+        logger.warning("Invalid API key attempt", extra={"provided_key_prefix": api_key[:8]})
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid API key",

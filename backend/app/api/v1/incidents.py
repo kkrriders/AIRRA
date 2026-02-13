@@ -1,13 +1,4 @@
-"""
-Incident API endpoints.
 
-Senior Engineering Note:
-- RESTful API design
-- Proper HTTP status codes
-- Pagination support
-- Async request handling
-- Dependency injection for database sessions
-"""
 import logging
 from datetime import datetime
 from uuid import UUID
@@ -27,6 +18,7 @@ from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
 from app.schemas.incident import (
     IncidentCreate,
+    IncidentFilter,
     IncidentListResponse,
     IncidentResponse,
     IncidentUpdate,
@@ -100,14 +92,21 @@ async def get_incident(
 async def list_incidents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: IncidentStatus | None = None,
-    service: str | None = None,
+    status: IncidentStatus | None = Query(None, description="Filter by incident status"),
+    service: str | None = Query(
+        None,
+        description="Filter by affected service",
+        min_length=1,
+        max_length=255,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """
     List incidents with pagination and filtering.
 
     Supports filtering by status and service.
+    Service name is validated to prevent SQL injection.
     """
     # Build query
     stmt = select(Incident).order_by(desc(Incident.detected_at))

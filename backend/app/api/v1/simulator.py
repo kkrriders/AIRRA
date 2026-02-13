@@ -81,7 +81,7 @@ class SimulationResponse(BaseModel):
 
     simulation_id: str
     scenario_id: str
-    incident_id: Optional[int] = None
+    incident_id: Optional[str] = None  # Changed from int to str (UUID)
     status: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None

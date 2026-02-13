@@ -2,6 +2,7 @@
 Application configuration using pydantic-settings.
 Senior Engineering Note: Environment-based config with validation and type safety.
 """
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -140,12 +141,49 @@ class Settings(BaseSettings):
     @field_validator("cors_origins")
     @classmethod
     def validate_cors_origins(cls, v: list[str], info) -> list[str]:
-        """Reject wildcard CORS origins in production to prevent security issues."""
+        """
+        Validate CORS origins are properly formatted URLs.
+
+        Security Note:
+        - Rejects wildcard '*' in production
+        - Validates URL format to prevent injection attacks
+        - Ensures origins use http:// or https:// schemes
+        """
+        # Reject wildcard in production
         if info.data.get("environment") == "production" and "*" in v:
             raise ValueError(
                 "Wildcard '*' CORS origin is not allowed in production. "
                 "Specify explicit origins instead."
             )
+
+        # Validate URL format for each origin (except wildcard in dev)
+        valid_origin_pattern = re.compile(
+            r"^https?://"  # Must start with http:// or https://
+            r"[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?"  # Hostname (alphanumeric, hyphens)
+            r"(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*"  # Optional domain parts
+            r"(:[0-9]{1,5})?"  # Optional port
+            r"$"
+        )
+
+        for origin in v:
+            # Skip wildcard validation (already checked above)
+            if origin == "*":
+                continue
+
+            # Validate URL format
+            if not valid_origin_pattern.match(origin):
+                raise ValueError(
+                    f"Invalid CORS origin format: '{origin}'. "
+                    f"Must be a valid URL like 'http://localhost:3000' or 'https://example.com'"
+                )
+
+            # Additional security checks
+            if "@" in origin:
+                raise ValueError(
+                    f"CORS origin cannot contain '@' character: '{origin}'. "
+                    f"This may indicate a URL injection attempt."
+                )
+
         return v
 
     @field_validator("anthropic_api_key", "openai_api_key")

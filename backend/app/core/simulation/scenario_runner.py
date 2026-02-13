@@ -9,7 +9,8 @@ Coordinates:
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,14 +34,14 @@ class SimulationResult:
         self,
         simulation_id: str,
         scenario_id: str,
-        incident_id: Optional[int] = None,
+        incident_id: Optional[Union[UUID, str]] = None,
         status: str = "running",
         started_at: Optional[datetime] = None,
         error: Optional[str] = None,
     ):
         self.simulation_id = simulation_id
         self.scenario_id = scenario_id
-        self.incident_id = incident_id
+        self.incident_id = str(incident_id) if incident_id else None
         self.status = status
         self.started_at = started_at or datetime.utcnow()
         self.completed_at: Optional[datetime] = None
@@ -195,7 +196,7 @@ class ScenarioRunner:
                 db=db,
             )
 
-            result.incident_id = incident_with_relations.id
+            result.incident_id = str(incident_with_relations.id)
             result.hypotheses_count = len(incident_with_relations.hypotheses)
             result.actions_count = len(incident_with_relations.actions)
 

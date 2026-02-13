@@ -88,6 +88,7 @@ Thumbs.db
 # Project specific
 backend/alembic/versions/*.py
 !backend/alembic/versions/__init__.py
+CLAUDE.md
 
 # Secrets
 *.pem

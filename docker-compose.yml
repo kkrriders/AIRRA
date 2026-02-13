@@ -66,6 +66,7 @@ services:
       AIRRA_ENVIRONMENT: development
       AIRRA_DEBUG: "true"
       AIRRA_LOG_LEVEL: INFO
+      AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
       AIRRA_LLM_PROVIDER: groq
       AIRRA_LLM_MODEL: llama-3.3-70b-versatile
       # Groq API key (uses OPENAI_API_KEY for compatibility)
@@ -91,6 +92,7 @@ services:
     container_name: airra-frontend
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
     ports:
       - "3000:3000"
     depends_on:

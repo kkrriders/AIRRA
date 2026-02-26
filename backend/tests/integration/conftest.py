@@ -62,16 +62,25 @@ async def api_client(
     async def override_get_db():
         yield test_db
 
-    app.dependency_overrides[get_db] = override_get_db
+    from app.api.rate_limit import llm_rate_limit
+    async def override_rate_limit():
+        pass
 
-    # Mock service singletons
-    with patch("app.services.llm_client.get_llm_client", return_value=mock_llm_client):
-        with patch(
-            "app.services.prometheus_client.get_prometheus_client",
-            return_value=mock_prometheus_client,
-        ):
-            async with AsyncClient(app=app, base_url="http://test") as client:
-                yield client
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[llm_rate_limit] = override_rate_limit
+
+    # Mock service singletons where they are imported
+    with patch("app.api.v1.incidents.get_llm_client", return_value=mock_llm_client), \
+         patch("app.api.v1.incidents.get_prometheus_client", return_value=mock_prometheus_client), \
+         patch("app.api.v1.quick_incident.get_llm_client", return_value=mock_llm_client), \
+         patch("app.api.v1.quick_incident.get_prometheus_client", return_value=mock_prometheus_client):
+        
+        async with AsyncClient(
+            app=app, 
+            base_url="http://test",
+            headers={"X-API-Key": "dev-test-key-12345"}
+        ) as client:
+            yield client
 
     # Clear overrides after test
     app.dependency_overrides.clear()
@@ -207,7 +216,7 @@ async def incident_with_actions(
 
     await action_factory(
         incident_id=incident.id,
-        action_type="scale_replicas",
+        action_type="scale_up",
         status=ActionStatus.PENDING_APPROVAL,
         risk_level="MEDIUM",
     )

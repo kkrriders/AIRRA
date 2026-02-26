@@ -39,12 +39,17 @@ class NotificationService:
 
     def __init__(self):
         """Initialize notification service."""
-        # SMTP configuration (from environment)
-        self.smtp_host = "smtp.gmail.com"  # TODO: Move to settings
-        self.smtp_port = 587
-        self.smtp_user = "your-email@gmail.com"  # TODO: Move to settings
-        self.smtp_password = "your-app-password"  # TODO: Move to settings
-        self.from_email = "airra-alerts@example.com"  # TODO: Move to settings
+        # SMTP configuration from settings
+        from app.config import settings
+
+        self.smtp_enabled = settings.smtp_enabled
+        self.smtp_host = settings.smtp_host
+        self.smtp_port = settings.smtp_port
+        self.smtp_user = settings.smtp_username
+        self.smtp_password = settings.smtp_password.get_secret_value()
+        self.from_email = settings.smtp_from_email
+        self.smtp_use_tls = settings.smtp_use_tls
+        self.frontend_url = settings.frontend_url
 
     async def send_incident_notification(
         self,
@@ -223,7 +228,7 @@ This is an automated notification. Do not reply to this email directly.
 
             if success:
                 notification.status = NotificationStatus.SENT
-                notification.sent_at = datetime.utcnow()
+                notification.sent_at = datetime.now(timezone.utc)
                 logger.info(
                     f"Notification {notification.id} sent via {notification.channel.value} "
                     f"to {engineer.email}"
@@ -260,7 +265,7 @@ This is an automated notification. Do not reply to this email directly.
             admin_url, _ = token_service.generate_admin_panel_url(
                 notification.id,
                 engineer.id,
-                base_url="http://localhost:3000",  # TODO: Use settings
+                base_url=self.frontend_url,
             )
 
             # Replace placeholder in message
@@ -279,22 +284,28 @@ This is an automated notification. Do not reply to this email directly.
             msg.attach(text_part)
             msg.attach(html_part)
 
-            # Send email
-            # NOTE: In development, this will fail without real SMTP credentials
-            # For production, configure SMTP settings in environment variables
-            logger.info(
-                f"[EMAIL SIMULATION] Would send email to {notification.recipient_address}\n"
-                f"Subject: {notification.subject}\n"
-                f"Admin URL: {admin_url}"
-            )
+            # Send email based on configuration
+            if self.smtp_enabled and self.smtp_user and self.smtp_password:
+                # Real SMTP sending
+                logger.info(f"Sending email via SMTP to {notification.recipient_address}")
 
-            # Uncomment for actual SMTP sending:
-            # with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-            #     server.starttls()
-            #     server.login(self.smtp_user, self.smtp_password)
-            #     server.send_message(msg)
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    if self.smtp_use_tls:
+                        server.starttls()
+                    server.login(self.smtp_user, self.smtp_password)
+                    server.send_message(msg)
 
-            return True  # Simulate success
+                logger.info(f"Email sent successfully to {notification.recipient_address}")
+            else:
+                # Simulation mode (development)
+                logger.info(
+                    f"[EMAIL SIMULATION] Would send email to {notification.recipient_address}\n"
+                    f"Subject: {notification.subject}\n"
+                    f"Admin URL: {admin_url}\n"
+                    f"To enable real emails: Set AIRRA_SMTP_ENABLED=true and configure SMTP credentials"
+                )
+
+            return True
 
         except Exception as e:
             logger.error(f"Email send failed: {e}", exc_info=True)

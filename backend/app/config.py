@@ -138,6 +138,44 @@ class Settings(BaseSettings):
     max_retries: int = Field(default=3, ge=0, le=10)
     retry_backoff_seconds: int = Field(default=5, ge=1, le=60)
 
+    # Email/SMTP Configuration
+    smtp_enabled: bool = Field(
+        default=False,
+        description="Enable real SMTP email sending (False = simulation mode)"
+    )
+    smtp_host: str = Field(
+        default="smtp.gmail.com",
+        description="SMTP server hostname"
+    )
+    smtp_port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+        description="SMTP server port (587 for TLS, 465 for SSL)"
+    )
+    smtp_username: str = Field(
+        default="",
+        description="SMTP authentication username (email address)"
+    )
+    smtp_password: SecretStr = Field(
+        default="",
+        description="SMTP authentication password (app-specific password for Gmail)"
+    )
+    smtp_from_email: str = Field(
+        default="airra-alerts@example.com",
+        description="From address for outgoing emails"
+    )
+    smtp_use_tls: bool = Field(
+        default=True,
+        description="Use TLS encryption (recommended)"
+    )
+
+    # Notification Settings
+    frontend_url: str = Field(
+        default="http://localhost:3000",
+        description="Frontend URL for generating links in notifications"
+    )
+
     @field_validator("cors_origins")
     @classmethod
     def validate_cors_origins(cls, v: list[str], info) -> list[str]:

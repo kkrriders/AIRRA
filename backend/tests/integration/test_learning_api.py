@@ -54,7 +54,8 @@ class TestLearningAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert "patterns" in data
+        assert isinstance(data["patterns"], list)
 
     async def test_outcome_updates_pattern_confidence(self, api_client, test_db,
                                                       incident_factory, hypothesis_factory,

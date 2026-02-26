@@ -23,7 +23,7 @@ export function QuickIncidentModal({ isOpen, onClose }: QuickIncidentModalProps)
   const [context, setContext] = useState("");
 
   const createMutation = useMutation({
-    mutationFn: (data: { service_name: string; severity?: IncidentSeverity; context?: any }) =>
+    mutationFn: (data: { service_name: string; severity: IncidentSeverity; context?: any }) =>
       api.createQuickIncident(data),
     onSuccess: (incident) => {
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
@@ -74,7 +74,7 @@ export function QuickIncidentModal({ isOpen, onClose }: QuickIncidentModalProps)
               Report New Incident
             </CardTitle>
             <CardDescription>
-              Quickly create and analyze an incident. Just provide the service name and we'll handle the rest.
+              Quickly create and analyze an incident. Just provide the service name and we&apos;ll handle the rest.
             </CardDescription>
           </CardHeader>
 
@@ -109,17 +109,16 @@ export function QuickIncidentModal({ isOpen, onClose }: QuickIncidentModalProps)
                       key={sev}
                       type="button"
                       onClick={() => setSeverity(sev)}
-                      className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                        severity === sev
-                          ? sev === "critical"
-                            ? "bg-red-500 text-white"
-                            : sev === "high"
+                      className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${severity === sev
+                        ? sev === "critical"
+                          ? "bg-red-500 text-white"
+                          : sev === "high"
                             ? "bg-orange-500 text-white"
                             : sev === "medium"
-                            ? "bg-yellow-500 text-white"
-                            : "bg-blue-500 text-white"
-                          : "bg-muted hover:bg-muted/80"
-                      }`}
+                              ? "bg-yellow-500 text-white"
+                              : "bg-blue-500 text-white"
+                        : "bg-muted hover:bg-muted/80"
+                        }`}
                       disabled={createMutation.isPending}
                     >
                       {sev}

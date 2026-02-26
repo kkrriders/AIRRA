@@ -17,15 +17,15 @@ import {
   getActionStatusColor,
   cn
 } from "@/lib/utils";
-import { 
-  ArrowLeft, 
-  Sparkles, 
-  AlertTriangle, 
-  Activity, 
-  Clock, 
-  ShieldCheck, 
-  Zap, 
-  Database, 
+import {
+  ArrowLeft,
+  Sparkles,
+  AlertTriangle,
+  Activity,
+  Clock,
+  ShieldCheck,
+  Zap,
+  Database,
   Server,
   ChevronRight,
   Fingerprint
@@ -124,7 +124,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
               </span>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             {incident.status === "detected" && (
               <Button
@@ -153,7 +153,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                 <div>
                   <p className="text-sm leading-relaxed text-foreground/80">{incident.description}</p>
                 </div>
-                
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 pt-6 border-t border-border/50">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
@@ -172,7 +172,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                       <Activity className="h-3 w-3" /> Components
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {incident.affected_components.map((comp) => (
+                      {incident.affected_components?.map((comp: string) => (
                         <Badge key={comp} variant="secondary" className="text-[10px] px-1.5 py-0">
                           {comp}
                         </Badge>
@@ -189,7 +189,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                 <Zap className="h-5 w-5 text-primary fill-primary/20" />
                 <h2 className="text-xl font-bold tracking-tight">AI Hypotheses</h2>
               </div>
-              
+
               {incident.hypotheses && incident.hypotheses.length > 0 ? (
                 <div className="grid gap-4">
                   {incident.hypotheses.map((hypothesis) => (
@@ -246,7 +246,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                 <ShieldCheck className="h-5 w-5 text-green-500 fill-green-500/10" />
                 <h2 className="text-xl font-bold tracking-tight">Remediation</h2>
               </div>
-              
+
               {incident.actions && incident.actions.length > 0 ? (
                 <div className="space-y-4">
                   {incident.actions.map((action) => (
@@ -259,14 +259,14 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mb-4 line-clamp-2">{action.description}</p>
-                        
+
                         <div className="flex items-center justify-between pt-4 border-t border-border/50">
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className={cn("text-[9px] border-border/50", getRiskColor(action.risk_level))}>
                               Risk: {action.risk_level}
                             </Badge>
                           </div>
-                          
+
                           {action.status === "pending_approval" ? (
                             <Link href="/approvals">
                               <Button size="sm" variant="secondary" className="h-7 text-[10px] gap-1 px-2">

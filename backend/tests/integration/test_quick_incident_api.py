@@ -13,7 +13,7 @@ class TestQuickIncidentAPI:
 
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert "id" in data
         assert data["title"] == quick_incident_payload["title"]
@@ -25,7 +25,7 @@ class TestQuickIncidentAPI:
         """Test with minimal payload (auto-generates title)."""
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_minimal_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert "id" in data
         assert "title" in data
@@ -36,7 +36,7 @@ class TestQuickIncidentAPI:
         """Test with metrics_snapshot bypasses Prometheus."""
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["metrics_snapshot"] == quick_incident_payload["metrics_snapshot"]
 
@@ -45,7 +45,7 @@ class TestQuickIncidentAPI:
         """Test action is created from hypothesis."""
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
 
         # Check if actions created
@@ -65,7 +65,7 @@ class TestQuickIncidentAPI:
 
         response = await api_client.post("/api/v1/quick-incident", json=payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert "severity" in data
 
@@ -77,7 +77,7 @@ class TestQuickIncidentAPI:
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_minimal_payload)
 
         # Should still create incident with fallback
-        assert response.status_code in [200, 500]  # Depends on error handling strategy
+        assert response.status_code in [201, 500]  # Depends on error handling strategy
 
     async def test_quick_incident_handles_llm_timeout(self, api_client, quick_incident_payload,
                                                       mock_llm_client_with_timeout):
@@ -85,7 +85,7 @@ class TestQuickIncidentAPI:
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
         # Should handle gracefully
-        assert response.status_code in [200, 500]
+        assert response.status_code in [201, 500]
 
     async def test_quick_incident_validates_service_name(self, api_client):
         """Test validation of required fields."""
@@ -100,7 +100,7 @@ class TestQuickIncidentAPI:
         """Test incident progresses through statuses."""
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
 
         # Should be in analyzed state with pending approval
@@ -111,7 +111,7 @@ class TestQuickIncidentAPI:
         """Test context is preserved in incident."""
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
         assert data["context"]["triggered_by"] == quick_incident_payload["context"]["triggered_by"]
 
@@ -120,7 +120,7 @@ class TestQuickIncidentAPI:
         """Test hypotheses are ranked by confidence."""
         response = await api_client.post("/api/v1/quick-incident", json=quick_incident_payload)
 
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
 
         if len(data["hypotheses"]) > 1:

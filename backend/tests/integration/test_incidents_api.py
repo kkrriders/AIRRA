@@ -46,7 +46,7 @@ class TestIncidentsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert "incidents" in data
+        assert "items" in data
         assert "total" in data
         assert data["total"] == 15
 
@@ -56,7 +56,7 @@ class TestIncidentsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data["incidents"]) == 5
+        assert len(data["items"]) == 5
         assert data["page"] == 1
         assert data["page_size"] == 5
 
@@ -66,7 +66,7 @@ class TestIncidentsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert all(inc["status"] == "resolved" for inc in data["incidents"])
+        assert all(inc["status"] == "resolved" for inc in data["items"])
 
     async def test_list_incidents_filter_by_service(self, api_client, multiple_incidents):
         """Test filtering by service."""
@@ -74,7 +74,7 @@ class TestIncidentsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert all(inc["affected_service"] == "service-0" for inc in data["incidents"])
+        assert all(inc["affected_service"] == "service-0" for inc in data["items"])
 
     async def test_update_incident(self, api_client, sample_incident, incident_update_payload):
         """Test PATCH /api/v1/incidents/{id} updates incident."""
@@ -99,8 +99,9 @@ class TestIncidentsAPI:
         assert "hypotheses_generated" in data or "status" in data
 
     async def test_analyze_creates_hypotheses(self, api_client, sample_incident,
-                                             mock_llm_client, anomalous_metric_data):
+                                             mock_llm_client, anomalous_metric_data, mock_prometheus_client):
         """Test analysis creates hypothesis records."""
+        mock_prometheus_client.get_service_metrics.return_value = anomalous_metric_data
         response = await api_client.post(f"/api/v1/incidents/{sample_incident.id}/analyze")
 
         # Get incident with relations

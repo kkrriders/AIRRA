@@ -45,6 +45,7 @@ async def verify_api_key(
 
     # Constant-time comparison to prevent timing attacks
     if not secrets.compare_digest(api_key, configured_key):
+        print(f"DEBUG: api_key='{api_key}', configured_key='{configured_key}'")
         logger.warning("Invalid API key attempt", extra={"provided_key_prefix": api_key[:8]})
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

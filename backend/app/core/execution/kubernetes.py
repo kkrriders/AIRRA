@@ -149,16 +149,19 @@ class KubernetesPodRestartExecutor(ActionExecutor):
 
             # Actual execution
             try:
-                # Import kubernetes client (optional dependency)
-                from kubernetes import client, config
-
-                # Load kubeconfig: try in-cluster first, fall back to local
-                try:
-                    config.load_incluster_config()
-                except config.ConfigException:
-                    config.load_kube_config()
-
-                v1 = client.CoreV1Api()
+                if self.k8s_client:
+                    v1 = self.k8s_client.CoreV1Api()
+                else:
+                    # Import kubernetes client (optional dependency)
+                    from kubernetes import client, config
+    
+                    # Load kubeconfig: try in-cluster first, fall back to local
+                    try:
+                        config.load_incluster_config()
+                    except config.ConfigException:
+                        config.load_kube_config()
+    
+                    v1 = client.CoreV1Api()
 
                 # If specific pod specified, delete it
                 if pod_name:
@@ -264,14 +267,17 @@ class KubernetesPodRestartExecutor(ActionExecutor):
                 return True, None
 
             try:
-                from kubernetes import client, config
-
-                try:
-                    config.load_incluster_config()
-                except config.ConfigException:
-                    config.load_kube_config()
-
-                apps_v1 = client.AppsV1Api()
+                if self.k8s_client:
+                    apps_v1 = self.k8s_client.AppsV1Api()
+                else:
+                    from kubernetes import client, config
+    
+                    try:
+                        config.load_incluster_config()
+                    except config.ConfigException:
+                        config.load_kube_config()
+    
+                    apps_v1 = client.AppsV1Api()
 
                 # Get deployment
                 deployment_obj = apps_v1.read_namespaced_deployment(
@@ -408,14 +414,17 @@ class KubernetesScaleExecutor(ActionExecutor):
 
             # Actual execution
             try:
-                from kubernetes import client, config
-
-                try:
-                    config.load_incluster_config()
-                except config.ConfigException:
-                    config.load_kube_config()
-
-                apps_v1 = client.AppsV1Api()
+                if self.k8s_client:
+                    apps_v1 = self.k8s_client.AppsV1Api()
+                else:
+                    from kubernetes import client, config
+    
+                    try:
+                        config.load_incluster_config()
+                    except config.ConfigException:
+                        config.load_kube_config()
+    
+                    apps_v1 = client.AppsV1Api()
 
                 # Get current replica count
                 deployment_obj = apps_v1.read_namespaced_deployment(
@@ -530,7 +539,9 @@ class KubernetesScaleExecutor(ActionExecutor):
                 "replicas": previous_replicas,
             }
 
-            return await self.execute(target, rollback_params)
+            result = await self.execute(target, rollback_params)
+            result.message = f"Rollback: {result.message}"
+            return result
 
         except Exception as e:
             return self._create_result(

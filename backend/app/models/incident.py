@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Index, String, Text, Enum as SQLEnum, Integer
+from sqlalchemy import JSON, Index, String, Text, Enum as SQLEnum, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, TimestampMixin
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from app.models.hypothesis import Hypothesis
     from app.models.action import Action
     from app.models.engineer_review import EngineerReview
+    from app.models.engineer import Engineer
 
 
 class IncidentStatus(str, enum.Enum):
@@ -85,12 +86,25 @@ class Incident(Base, TimestampMixin):
         default="prometheus",
     )
 
+    # Assignment tracking
+    assigned_engineer_id: Mapped[Optional[UUID]] = mapped_column(
+        ForeignKey("engineers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Engineer currently assigned to resolve this incident",
+    )
+
     # Resolution tracking
     resolved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     resolution_time_seconds: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Time to resolution in seconds",
+    )
+    resolution_summary: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Summary of how incident was resolved",
     )
 
     # Flexible metadata storage
@@ -125,6 +139,17 @@ class Incident(Base, TimestampMixin):
         back_populates="incident",
         cascade="all, delete-orphan",
         order_by="desc(EngineerReview.assigned_at)",
+    )
+    events: Mapped[list["IncidentEvent"]] = relationship(
+        "IncidentEvent",
+        back_populates="incident",
+        cascade="all, delete-orphan",
+        order_by="IncidentEvent.created_at",
+    )
+    assigned_engineer: Mapped[Optional["Engineer"]] = relationship(
+        "Engineer",
+        foreign_keys=[assigned_engineer_id],
+        lazy="joined",
     )
 
     # Indexes for common queries

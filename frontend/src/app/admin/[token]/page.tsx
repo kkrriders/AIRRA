@@ -91,13 +91,15 @@ export default function AdminPanelPage() {
   // Flag to ensure acknowledgement only runs once
   const [hasAttemptedAck, setHasAttemptedAck] = useState(false);
 
+  const { mutate: ackMutate } = acknowledgeMutation;
+
   // Auto-acknowledge on mount (flag-based to prevent infinite loops)
   useEffect(() => {
     if (token && !acknowledged && !hasAttemptedAck) {
       setHasAttemptedAck(true);
-      acknowledgeMutation.mutate(token);
+      ackMutate(token);
     }
-  }, [token, acknowledged, hasAttemptedAck]); // Safe: no mutation object in dependencies
+  }, [token, acknowledged, hasAttemptedAck, ackMutate]);
 
   // Fetch incident data (no auto-refresh - admin panel is one-time review)
   const { data: incident, isLoading: incidentLoading } = useQuery({
@@ -229,12 +231,15 @@ export default function AdminPanelPage() {
     low: 'bg-blue-600',
   };
 
-  const statusColors = {
-    open: 'bg-red-100 text-red-800',
-    investigating: 'bg-yellow-100 text-yellow-800',
-    mitigating: 'bg-blue-100 text-blue-800',
+  const statusColors: Record<string, string> = {
+    detected: 'bg-red-100 text-red-800',
+    analyzing: 'bg-yellow-100 text-yellow-800',
+    pending_approval: 'bg-orange-100 text-orange-800',
+    approved: 'bg-blue-100 text-blue-800',
+    executing: 'bg-blue-100 text-blue-800',
     resolved: 'bg-green-100 text-green-800',
-    closed: 'bg-gray-100 text-gray-800',
+    failed: 'bg-gray-100 text-gray-800',
+    escalated: 'bg-red-100 text-red-800',
   };
 
   return (
@@ -248,8 +253,8 @@ export default function AdminPanelPage() {
               Acknowledged{' '}
               {acknowledgeMutation.data?.acknowledged_at
                 ? formatDistanceToNow(new Date(acknowledgeMutation.data.acknowledged_at), {
-                    addSuffix: true,
-                  })
+                  addSuffix: true,
+                })
                 : 'just now'}
             </p>
           </div>
@@ -325,13 +330,13 @@ export default function AdminPanelPage() {
                         <p className="text-sm text-gray-600 mt-1">{action.description}</p>
                       </div>
                       <div className="flex flex-col items-end gap-2">
-                        {action.requires_approval && (
+                        {action.requires_approval && action.status === 'pending_approval' && (
                           <Badge className="bg-yellow-100 text-yellow-800">Needs Approval</Badge>
                         )}
-                        {action.approved && (
+                        {action.status === 'approved' && (
                           <Badge className="bg-green-100 text-green-800">Approved</Badge>
                         )}
-                        {action.executed && (
+                        {action.status === 'succeeded' && (
                           <Badge className="bg-blue-100 text-blue-800">Executed</Badge>
                         )}
                       </div>
@@ -340,11 +345,11 @@ export default function AdminPanelPage() {
                     {action.execution_result && (
                       <div className="bg-gray-50 rounded p-3">
                         <p className="text-sm font-medium text-gray-700 mb-1">Result:</p>
-                        <p className="text-sm text-gray-600">{action.execution_result}</p>
+                        <pre className="text-sm text-gray-600 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(action.execution_result, null, 2)}</pre>
                       </div>
                     )}
 
-                    {action.requires_approval && !action.approved && (
+                    {action.requires_approval && action.status === 'pending_approval' && (
                       <div className="flex gap-2 mt-4">
                         <Button
                           onClick={() => approveActionMutation.mutate({ actionId: action.id })}

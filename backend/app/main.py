@@ -354,6 +354,7 @@ from app.api.v1 import (  # noqa: E402
     on_call,
     notifications,
     analytics,
+    postmortems,
 )
 from app.api.v1.admin import engineers, reviews  # noqa: E402
 from app.api.dependencies import verify_api_key  # noqa: E402
@@ -432,6 +433,13 @@ app.include_router(
     analytics.router,
     prefix=f"{settings.api_v1_prefix}",
     tags=["Analytics"],
+    dependencies=[Depends(verify_api_key)],
+)
+
+app.include_router(
+    postmortems.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["Postmortems & Timeline"],
     dependencies=[Depends(verify_api_key)],
 )
 

@@ -1,7 +1,7 @@
-
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class IncidentOutcome(BaseModel):
     """Captured outcome of an incident resolution."""
 
-    incident_id: str
-    hypothesis_id: Optional[str] = None
+    incident_id: UUID
+    hypothesis_id: Optional[UUID] = None
     hypothesis_correct: bool = False
-    action_id: Optional[str] = None
+    action_id: Optional[UUID] = None
     action_effective: bool = False
     time_to_resolution_minutes: Optional[int] = None
     human_override: bool = False

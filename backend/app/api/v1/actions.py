@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("", response_model=list[ActionResponse])
+async def list_actions(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+):
+    """List all actions."""
+    stmt = select(Action).order_by(Action.created_at.desc()).offset(skip).limit(limit)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
 @router.get("/{action_id}", response_model=ActionResponse)
 async def get_action(
     action_id: UUID,

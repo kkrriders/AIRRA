@@ -68,7 +68,7 @@ class OnCallFinder:
         Returns:
             OnCallResult with engineer and schedule, or None if no match
         """
-        check_time = at_time or datetime.utcnow()
+        check_time = at_time or datetime.now(timezone.utc)
         target_priority = priority or OnCallPriority.PRIMARY
 
         # Build query for active on-call schedules
@@ -214,7 +214,7 @@ class OnCallFinder:
         Returns:
             List of all on-call engineers
         """
-        check_time = at_time or datetime.utcnow()
+        check_time = at_time or datetime.now(timezone.utc)
 
         stmt = (
             select(OnCallSchedule)
@@ -261,7 +261,7 @@ class OnCallFinder:
         Returns:
             List of active on-call schedules for the engineer
         """
-        check_time = at_time or datetime.utcnow()
+        check_time = at_time or datetime.now(timezone.utc)
 
         stmt = (
             select(OnCallSchedule)

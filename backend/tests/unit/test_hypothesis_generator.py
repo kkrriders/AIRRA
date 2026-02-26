@@ -19,6 +19,7 @@ from app.core.reasoning.hypothesis_generator import (
     HypothesisGenerator,
     HypothesisItem,
     HypothesesResponse,
+    HypothesesResponseLLM,
     rank_hypotheses,
 )
 from app.services.llm_client import LLMResponse
@@ -56,7 +57,7 @@ class TestHypothesisGenerator:
         mock_llm_client.generate_structured.assert_called_once()
         call_args = mock_llm_client.generate_structured.call_args
 
-        assert call_args.kwargs["response_model"] == HypothesesResponse
+        assert call_args.kwargs["response_model"] == HypothesesResponseLLM
         assert call_args.kwargs["temperature"] == 0.3
         assert "memory_usage" in call_args.kwargs["prompt"]
         assert "payment-service" in call_args.kwargs["prompt"]

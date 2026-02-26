@@ -10,7 +10,7 @@ class TestAnthropicClient:
 
     async def test_generate_text(self, mock_anthropic_response, monkeypatch):
         """Test text generation."""
-        with patch('anthropic.AsyncAnthropic') as mock_client_class:
+        with patch('app.services.llm_client.AsyncAnthropic') as mock_client_class:
             mock_client = AsyncMock()
             mock_client.messages.create = AsyncMock(return_value=mock_anthropic_response)
             mock_client_class.return_value = mock_client
@@ -24,7 +24,7 @@ class TestAnthropicClient:
 
     async def test_generate_structured_output(self, mock_anthropic_response):
         """Test structured output generation."""
-        with patch('anthropic.AsyncAnthropic') as mock_client:
+        with patch('app.services.llm_client.AsyncAnthropic') as mock_client:
             mock_instance = AsyncMock()
             mock_instance.messages.create = AsyncMock(return_value=mock_anthropic_response)
             mock_client.return_value = mock_instance
@@ -61,7 +61,7 @@ class TestOpenAIClient:
 
     async def test_generate_with_gpt(self, mock_openai_response):
         """Test GPT text generation."""
-        with patch('openai.AsyncOpenAI') as mock_client:
+        with patch('app.services.llm_client.AsyncOpenAI') as mock_client:
             mock_instance = AsyncMock()
             mock_instance.chat.completions.create = AsyncMock(return_value=mock_openai_response)
             mock_client.return_value = mock_instance
@@ -107,8 +107,9 @@ class TestLLMClientFactory:
     def test_returns_anthropic_client(self, monkeypatch):
         """Test factory returns Anthropic client."""
         from app.config import settings
+        from pydantic import SecretStr
         monkeypatch.setattr(settings, "llm_provider", "anthropic")
-        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        monkeypatch.setattr(settings, "anthropic_api_key", SecretStr("test-key"))
 
         client = get_llm_client()
         assert isinstance(client, AnthropicClient)
@@ -116,8 +117,9 @@ class TestLLMClientFactory:
     def test_returns_openai_client(self, monkeypatch):
         """Test factory returns OpenAI client."""
         from app.config import settings
+        from pydantic import SecretStr
         monkeypatch.setattr(settings, "llm_provider", "openai")
-        monkeypatch.setattr(settings, "openai_api_key", "test-key")
+        monkeypatch.setattr(settings, "openai_api_key", SecretStr("test-key"))
 
         client = get_llm_client()
         assert isinstance(client, OpenAIClient)
@@ -125,8 +127,9 @@ class TestLLMClientFactory:
     def test_returns_openrouter_client(self, monkeypatch):
         """Test factory returns OpenRouter client."""
         from app.config import settings
+        from pydantic import SecretStr
         monkeypatch.setattr(settings, "llm_provider", "openrouter")
-        monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+        monkeypatch.setattr(settings, "openrouter_api_key", SecretStr("test-key"))
 
         client = get_llm_client()
         assert isinstance(client, OpenRouterClient)
@@ -141,8 +144,10 @@ class TestLLMClientFactory:
 
     def test_raises_error_for_missing_api_key(self, monkeypatch):
         """Test error when API key missing."""
-        monkeypatch.setenv("AIRRA_LLM_PROVIDER", "anthropic")
-        monkeypatch.delenv("AIRRA_ANTHROPIC_API_KEY", raising=False)
+        from app.config import settings
+        from pydantic import SecretStr
+        monkeypatch.setattr(settings, "llm_provider", "anthropic")
+        monkeypatch.setattr(settings, "anthropic_api_key", SecretStr(""))
 
         with pytest.raises((ValueError, KeyError)):
             get_llm_client()

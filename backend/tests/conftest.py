@@ -92,7 +92,7 @@ async def test_db(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None
     Each test gets a fresh database with all tables created.
     Automatically rolls back after test completion.
     """
-    async_session_maker = async_sessionmaker(
+    test_session_maker = async_sessionmaker(
         test_engine,
         class_=AsyncSession,
         expire_on_commit=False,
@@ -100,9 +100,16 @@ async def test_db(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None
         autoflush=False,
     )
 
-    async with async_session_maker() as session:
-        yield session
-        await session.rollback()
+    import app.database
+    original_maker = app.database.async_session_maker
+    app.database.async_session_maker = test_session_maker
+    
+    try:
+        async with test_session_maker() as session:
+            yield session
+            await session.rollback()
+    finally:
+        app.database.async_session_maker = original_maker
 
 
 # ============================================================================
@@ -281,7 +288,7 @@ def anomalous_metric_data() -> dict[str, list[MetricResult]]:
     cpu_values = [
         MetricDataPoint(
             timestamp=(now - timedelta(minutes=i)).timestamp(),
-            value=40.0 if i > 5 else 95.0,  # Spike in last 5 minutes
+            value=10.0 if i > 2 else 95.0,  # Sharp spike in last 2 minutes
         )
         for i in range(20, 0, -1)
     ]
@@ -418,15 +425,18 @@ def hypothesis_factory(test_db: AsyncSession):
             "category": "memory_leak",
             "confidence_score": 0.75,
             "rank": 1,
-            "evidence": [
-                {
-                    "signal_type": "metric",
-                    "signal_name": "memory_usage",
-                    "observation": "Memory increased by 50%",
-                    "relevance": 0.9,
-                }
-            ],
-            "reasoning": "Test reasoning",
+            "evidence": {
+                "items": [
+                    {
+                        "signal_type": "metric",
+                        "signal_name": "memory_usage",
+                        "observation": "Memory increased by 50%",
+                        "relevance": 0.9,
+                    }
+                ]
+            },
+            "llm_reasoning": "Test reasoning",
+            "llm_model": "test-model",
         }
         defaults.update(kwargs)
 
@@ -455,6 +465,7 @@ def action_factory(test_db: AsyncSession):
         defaults = {
             "incident_id": incident_id,
             "action_type": "restart_pod",
+            "name": "Restart Pod Action",
             "target_service": "test-service",
             "target_resource": "test-service-pod-abc123",
             "description": "Restart pod to recover from issue",

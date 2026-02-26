@@ -112,7 +112,7 @@ async def acknowledge_notification(
         }
 
     # Mark as acknowledged
-    notification.acknowledged_at = datetime.utcnow()
+    notification.acknowledged_at = datetime.now(timezone.utc)
     notification.status = NotificationStatus.ACKNOWLEDGED
 
     # Calculate response time

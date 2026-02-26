@@ -27,7 +27,10 @@
       "Bash(docker exec:*)",
       "Bash(npm run type-check:*)",
       "Bash(curl:*)",
-      "Bash(docker-compose restart:*)"
+      "Bash(docker-compose restart:*)",
+      "Bash(ls:*)",
+      "Bash(rm:*)",
+      "Bash(git rm:*)"
     ]
   },
   "outputStyle": "Explanatory"

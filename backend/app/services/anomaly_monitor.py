@@ -1,8 +1,10 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import redis.asyncio as aioredis
 
 from app.config import settings
 from app.core.perception.anomaly_detector import AnomalyDetector, categorize_anomaly
@@ -11,6 +13,25 @@ from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.services.prometheus_client import get_prometheus_client
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level Redis client for anomaly deduplication.
+# Shared across all check_once() calls in the same worker process.
+# ---------------------------------------------------------------------------
+_redis_client: Optional[aioredis.Redis] = None
+
+
+def _get_redis() -> aioredis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(
+            str(settings.redis_url),
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
+    return _redis_client
 
 
 class AnomalyMonitor:
@@ -34,7 +55,10 @@ class AnomalyMonitor:
         self.min_confidence = min_confidence
         self.deduplication_window = timedelta(minutes=deduplication_window_minutes)
         self.is_running = False
-        self.recent_incidents: dict[str, datetime] = {}  # service -> last incident time
+        # In-memory fallback for dedup when Redis is unreachable.
+        # Primary dedup state lives in Redis so it is shared across Celery
+        # worker processes and survives restarts (IMP-2 fix).
+        self._fallback_recent_incidents: dict[str, datetime] = {}
         self._query_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_QUERIES)
 
     async def start(self):
@@ -57,6 +81,16 @@ class AnomalyMonitor:
         self.is_running = False
         logger.info("Anomaly monitor stopped")
 
+    async def check_once(self) -> None:
+        """
+        Public facade for Celery tasks — run a single anomaly detection cycle.
+
+        Celery monitoring tasks call this instead of the private
+        _check_for_anomalies() so the contract is explicit and refactors
+        to internal method names do not silently break the task (S1 fix).
+        """
+        await self._check_for_anomalies()
+
     async def _check_for_anomalies(self):
         """Check all monitored services for anomalies."""
         try:
@@ -69,11 +103,11 @@ class AnomalyMonitor:
                 threshold_sigma=settings.anomaly_threshold_sigma
             )
 
-            # Check services concurrently with bounded parallelism
+            # Check services concurrently with bounded parallelism.
+            # Deduplication is handled inside _check_service via Redis (IMP-2).
             tasks = [
                 self._check_service(service_name, prom_client, anomaly_detector)
                 for service_name in monitored_services
-                if not self._is_recently_reported(service_name)
             ]
 
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -90,6 +124,11 @@ class AnomalyMonitor:
         """Check a single service for anomalies, throttled by semaphore."""
         async with self._query_semaphore:
             try:
+                # Skip services we reported recently (Redis-backed dedup shared
+                # across all worker processes and restarts).
+                if await self._is_recently_reported(service_name):
+                    return
+
                 # Fetch service metrics
                 service_metrics = await prom_client.get_service_metrics(
                     service_name=service_name,
@@ -110,7 +149,7 @@ class AnomalyMonitor:
 
                 if significant_anomalies:
                     await self._create_incident(service_name, significant_anomalies)
-                    self.recent_incidents[service_name] = datetime.utcnow()
+                    await self._mark_recently_reported(service_name)
 
             except Exception as e:
                 logger.error(
@@ -131,15 +170,41 @@ class AnomalyMonitor:
         """
         return settings.monitored_services
 
-    def _is_recently_reported(self, service_name: str) -> bool:
-        """Check if we recently created an incident for this service."""
-        if service_name not in self.recent_incidents:
-            return False
+    async def _is_recently_reported(self, service_name: str) -> bool:
+        """
+        Check if we recently created an incident for this service.
 
-        last_incident_time = self.recent_incidents[service_name]
-        time_since_last = datetime.utcnow() - last_incident_time
+        Primary state is a Redis key with a TTL matching the deduplication window.
+        This is shared across all Celery worker processes and survives restarts,
+        preventing duplicate incidents from N concurrent workers (IMP-2 fix).
 
-        return time_since_last < self.deduplication_window
+        Falls back to the in-memory dict if Redis is unreachable.
+        """
+        try:
+            key = f"airra:anomaly_dedup:{service_name}"
+            return bool(await _get_redis().exists(key))
+        except Exception as e:
+            logger.warning(f"Redis dedup check failed for {service_name}, using in-memory fallback: {e}")
+            last = self._fallback_recent_incidents.get(service_name)
+            if last is None:
+                return False
+            return (datetime.now(timezone.utc) - last) < self.deduplication_window
+
+    async def _mark_recently_reported(self, service_name: str) -> None:
+        """
+        Record that we just created an incident for this service.
+
+        Sets a Redis key with TTL = deduplication_window so the key
+        auto-expires exactly when the window closes. Falls back to
+        the in-memory dict if Redis is unreachable.
+        """
+        try:
+            key = f"airra:anomaly_dedup:{service_name}"
+            ttl = int(self.deduplication_window.total_seconds())
+            await _get_redis().set(key, "1", ex=ttl)
+        except Exception as e:
+            logger.warning(f"Redis dedup mark failed for {service_name}, using in-memory fallback: {e}")
+            self._fallback_recent_incidents[service_name] = datetime.now(timezone.utc)
 
     async def _create_incident(self, service_name: str, anomalies: list):
         """Create an incident from detected anomalies."""
@@ -187,7 +252,7 @@ class AnomalyMonitor:
                     status=IncidentStatus.DETECTED,
                     affected_service=service_name,
                     affected_components=[service_name],
-                    detected_at=datetime.utcnow(),
+                    detected_at=datetime.now(timezone.utc),
                     detection_source="airra_monitor",
                     metrics_snapshot=metrics_snapshot,
                     context={

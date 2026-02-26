@@ -1,4 +1,19 @@
-version: '3.8'
+# Shared environment block for backend, celery-worker, and celery-beat.
+# Add new env vars here once to propagate to all three services automatically.
+# x-* keys are Docker Compose extension fields — ignored by Compose at root level,
+# valid only here (NOT under services:).
+x-backend-env: &backend-env
+  AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
+  AIRRA_REDIS_URL: redis://redis:6379/0
+  AIRRA_PROMETHEUS_URL: http://prometheus:9090
+  AIRRA_ENVIRONMENT: development
+  AIRRA_DEBUG: "true"
+  AIRRA_LOG_LEVEL: INFO
+  AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
+  AIRRA_LLM_PROVIDER: groq
+  AIRRA_LLM_MODEL: llama-3.3-70b-versatile
+  # Groq API key (uses OPENAI_API_KEY for compatibility)
+  AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
 
 services:
   # PostgreSQL Database
@@ -19,7 +34,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for caching and queues
+  # Redis for caching, Celery broker/backend, and redbeat schedule state
   redis:
     image: redis:7-alpine
     container_name: airra-redis
@@ -53,29 +68,40 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot migration runner — all services that need the DB wait for this to
+  # complete successfully before starting. Runs 'alembic upgrade head' once per
+  # compose up. This prevents concurrent migration conflicts when multiple
+  # replicas try to migrate simultaneously (I3 fix).
+  db-migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: airra-db-migrate
+    command: alembic upgrade head
+    environment:
+      AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
+      AIRRA_REDIS_URL: redis://redis:6379/0
+      AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   # AIRRA Backend API
+  # NOTE: 'command' overrides entrypoint.sh for hot-reload in development.
+  # Migrations are handled by db-migrate above, not by this container.
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: airra-backend
     environment:
-      AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
-      AIRRA_REDIS_URL: redis://redis:6379/0
-      AIRRA_PROMETHEUS_URL: http://prometheus:9090
-      AIRRA_ENVIRONMENT: development
-      AIRRA_DEBUG: "true"
-      AIRRA_LOG_LEVEL: INFO
-      AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
-      AIRRA_LLM_PROVIDER: groq
-      AIRRA_LLM_MODEL: llama-3.3-70b-versatile
-      # Groq API key (uses OPENAI_API_KEY for compatibility)
-      AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
+      <<: *backend-env
     ports:
       - "8000:8000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       prometheus:
@@ -83,6 +109,60 @@ services:
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery worker — processes analysis tasks (queue: analysis) and monitoring
+  # one-shots (queue: celery). Separate queues prevent slow LLM calls from
+  # starving fast monitoring tasks (S2 fix).
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: airra-celery-worker
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4 -Q celery,analysis
+    environment:
+      <<: *backend-env
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.worker.celery_app", "inspect", "ping", "--timeout=10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+
+  # Celery Beat scheduler — uses redbeat.RedBeatScheduler (state in Redis) so
+  # schedule timestamps survive container restarts without firing all tasks
+  # immediately (C3 fix). NEVER scale past 1 replica — duplicate Beat instances
+  # produce duplicate tasks on every schedule tick.
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: airra-celery-beat
+    command: celery -A app.worker.celery_app beat --loglevel=info
+    environment:
+      <<: *backend-env
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      # Beat is a scheduler, not a worker — it does not respond to 'inspect ping'
+      # (that command only reaches worker processes). Check for the beat process
+      # directly instead.
+      test: ["CMD-SHELL", "pgrep -f 'celery.*beat' > /dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   # AIRRA Frontend (Next.js)
   frontend:

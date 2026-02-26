@@ -1,0 +1,10 @@
+# Development and testing dependencies only.
+# Install via: pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=7.4.4
+pytest-asyncio>=0.23.3
+pytest-cov>=4.1.0
+black>=23.12.1
+ruff>=0.1.11
+mypy>=1.8.0

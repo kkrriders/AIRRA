@@ -25,6 +25,7 @@ from app.models.hypothesis import Hypothesis  # noqa: F401
 from app.models.action import Action  # noqa: F401
 from app.models.engineer import Engineer  # noqa: F401
 from app.models.engineer_review import EngineerReview  # noqa: F401
+from app.models.incident_pattern import IncidentPattern  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

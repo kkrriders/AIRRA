@@ -17,14 +17,18 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files
+# Copy prod dependency file only — dev tools (pytest, ruff, mypy) are in
+# requirements-dev.txt and are never installed in the production image.
 COPY requirements.txt ./
 
-# Install dependencies
+# Install production dependencies only
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
+
+# Make entrypoint executable (before switching to non-root user)
+RUN chmod +x entrypoint.sh
 
 # Create non-root user
 RUN useradd -m -u 1000 airra && chown -R airra:airra /app
@@ -37,5 +41,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Start AIRRA backend API server (migrations handled by db-migrate service)
+CMD ["./entrypoint.sh"]

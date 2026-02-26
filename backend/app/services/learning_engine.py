@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -93,8 +93,10 @@ class LearningEngine:
                         hypothesis.validated = outcome.hypothesis_correct
                         hypothesis.validation_feedback = outcome.resolution_notes
 
-                        # Update pattern library
+                        # Update pattern library — pass the active session so
+                        # the pattern update is part of the same transaction (S5)
                         await self._update_pattern_library(
+                            db=db,
                             incident=incident,
                             hypothesis=hypothesis,
                             was_correct=outcome.hypothesis_correct,
@@ -119,7 +121,7 @@ class LearningEngine:
                     "action_effective": outcome.action_effective,
                     "human_override": outcome.human_override,
                     "override_reason": outcome.override_reason,
-                    "captured_at": datetime.utcnow().isoformat(),
+                    "captured_at": datetime.now(timezone.utc).isoformat(),
                 }
 
                 await db.commit()
@@ -135,67 +137,174 @@ class LearningEngine:
 
     async def _update_pattern_library(
         self,
+        db,  # AsyncSession — passed from capture_outcome for a single atomic transaction (S5)
         incident: Incident,
         hypothesis: Hypothesis,
         was_correct: bool,
     ) -> None:
-        """Update the pattern library based on outcome."""
-        try:
-            # Create pattern signature
-            pattern_id = f"{incident.affected_service}:{hypothesis.category}"
+        """
+        Update the pattern library based on outcome.
 
-            if pattern_id in self.patterns:
-                pattern = self.patterns[pattern_id]
+        Reads current counters from PostgreSQL with SELECT FOR UPDATE (pessimistic
+        lock) rather than from the in-memory dict. This prevents split-brain across
+        API replicas: two replicas processing outcomes concurrently for the same
+        service:category pattern would otherwise both read stale in-memory state,
+        compute wrong occurrence_count/success_rate, and overwrite each other's
+        DB rows with incorrect values (I1 fix).
+        """
+        # No try/except here — let exceptions propagate to capture_outcome's
+        # outer except block. Swallowing errors would allow a failed pattern
+        # update to go unnoticed while capture_outcome's db.commit() at line ~127
+        # partial-commits hypothesis and action changes without the pattern update,
+        # violating the "single atomic transaction" contract (SUG-2 fix).
+        from sqlalchemy import select
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.models.incident_pattern import IncidentPattern
 
-                # Update occurrence count
-                pattern.occurrence_count += 1
+        pattern_id = f"{incident.affected_service}:{hypothesis.category}"
 
-                # Update success rate
-                if was_correct:
-                    pattern.success_rate = (
-                        pattern.success_rate * (pattern.occurrence_count - 1) + 1
-                    ) / pattern.occurrence_count
-                else:
-                    pattern.success_rate = (
-                        pattern.success_rate * (pattern.occurrence_count - 1)
-                    ) / pattern.occurrence_count
+        # SELECT FOR UPDATE: lock the row so concurrent replicas cannot
+        # read the same stale counters and produce incorrect aggregates.
+        stmt = (
+            select(IncidentPattern)
+            .where(IncidentPattern.pattern_id == pattern_id)
+            .with_for_update()
+        )
+        result = await db.execute(stmt)
+        db_pattern = result.scalar_one_or_none()
 
-                # Adjust confidence based on success rate
-                if pattern.success_rate > 0.8:
-                    pattern.confidence_adjustment = 0.1
-                elif pattern.success_rate < 0.3:
-                    pattern.confidence_adjustment = -0.1
-                else:
-                    pattern.confidence_adjustment = 0.0
-
-                logger.info(
-                    f"Updated pattern {pattern_id}: "
-                    f"occurrences={pattern.occurrence_count}, "
-                    f"success_rate={pattern.success_rate:.2%}"
-                )
-
+        if db_pattern:
+            # Derive new counters from DB (authoritative), not in-memory cache
+            new_count = db_pattern.occurrence_count + 1
+            if was_correct:
+                new_success_rate = (
+                    db_pattern.success_rate * db_pattern.occurrence_count + 1
+                ) / new_count
             else:
-                # Create new pattern
-                pattern = PatternSignature(
-                    pattern_id=pattern_id,
-                    name=f"{incident.affected_service} - {hypothesis.category}",
-                    category=hypothesis.category,
-                    signal_indicators=hypothesis.supporting_signals,
-                    confidence_adjustment=0.0,
-                    occurrence_count=1,
-                    success_rate=1.0 if was_correct else 0.0,
-                )
-                self.patterns[pattern_id] = pattern
+                new_success_rate = (
+                    db_pattern.success_rate * db_pattern.occurrence_count
+                ) / new_count
 
-                logger.info(f"Created new pattern {pattern_id}")
+            if new_success_rate > 0.8:
+                new_confidence = 0.1
+            elif new_success_rate < 0.3:
+                new_confidence = -0.1
+            else:
+                new_confidence = 0.0
 
-        except Exception as e:
-            logger.error(f"Failed to update pattern library: {str(e)}")
+            db_pattern.occurrence_count = new_count
+            db_pattern.success_rate = new_success_rate
+            db_pattern.confidence_adjustment = new_confidence
+
+            logger.info(
+                f"Updated pattern {pattern_id}: "
+                f"occurrences={new_count}, "
+                f"success_rate={new_success_rate:.2%}"
+            )
+        else:
+            new_count = 1
+            new_success_rate = 1.0 if was_correct else 0.0
+            new_confidence = 0.0
+
+            db_pattern = IncidentPattern(
+                pattern_id=pattern_id,
+                name=f"{incident.affected_service} - {hypothesis.category}",
+                category=hypothesis.category,
+                signal_indicators=hypothesis.supporting_signals,
+                confidence_adjustment=new_confidence,
+                occurrence_count=new_count,
+                success_rate=new_success_rate,
+            )
+            db.add(db_pattern)
+            logger.info(f"Created new pattern {pattern_id}")
+
+            # Update in-memory L1 cache to match DB (will be committed by caller)
+            self.patterns[pattern_id] = PatternSignature(
+                pattern_id=pattern_id,
+                name=db_pattern.name,
+                category=db_pattern.category,
+                signal_indicators=db_pattern.signal_indicators or [],
+                confidence_adjustment=new_confidence,
+                occurrence_count=new_count,
+                success_rate=new_success_rate,
+            )
 
     async def get_pattern(self, service: str, category: str) -> Optional[PatternSignature]:
-        """Get pattern for a service and category."""
+        """Get pattern for a service and category. L1: in-memory, L2: DB."""
         pattern_id = f"{service}:{category}"
-        return self.patterns.get(pattern_id)
+
+        # L1 cache hit
+        if pattern_id in self.patterns:
+            return self.patterns[pattern_id]
+
+        # L2: DB lookup (e.g. first request after restart before load_patterns_from_db runs)
+        try:
+            from sqlalchemy import select
+            from app.models.incident_pattern import IncidentPattern
+
+            async with get_db_context() as db:
+                stmt = select(IncidentPattern).where(
+                    IncidentPattern.pattern_id == pattern_id
+                )
+                result = await db.execute(stmt)
+                db_pattern = result.scalar_one_or_none()
+
+                if db_pattern:
+                    pattern = PatternSignature(
+                        pattern_id=db_pattern.pattern_id,
+                        name=db_pattern.name,
+                        category=db_pattern.category,
+                        signal_indicators=db_pattern.signal_indicators or [],
+                        confidence_adjustment=db_pattern.confidence_adjustment,
+                        occurrence_count=db_pattern.occurrence_count,
+                        success_rate=db_pattern.success_rate,
+                    )
+                    self.patterns[pattern_id] = pattern  # warm cache
+                    return pattern
+        except Exception as e:
+            logger.warning(f"DB lookup for pattern {pattern_id} failed: {e}")
+
+        return None
+
+    async def load_patterns_from_db(self) -> None:
+        """
+        Warm the in-memory pattern cache from PostgreSQL on startup.
+
+        Called once during application lifespan startup so existing learned
+        patterns survive container restarts and are shared across replicas.
+
+        Cardinality note: the SELECT here is intentionally unbounded.
+        Each pattern row represents one unique "{service}:{category}" pair
+        (e.g. "payment-service:memory_leak"). With ~10 services × ~10
+        categories in AIRRA's domain, the ceiling is ~100 rows — safely
+        held in memory. If the pattern space grows significantly, add a
+        LIMIT + LRU eviction policy before shipping this at larger scale.
+        """
+        try:
+            from sqlalchemy import select
+            from app.models.incident_pattern import IncidentPattern
+
+            async with get_db_context() as db:
+                stmt = select(IncidentPattern)
+                result = await db.execute(stmt)
+                db_patterns = result.scalars().all()
+
+                for db_pattern in db_patterns:
+                    pattern = PatternSignature(
+                        pattern_id=db_pattern.pattern_id,
+                        name=db_pattern.name,
+                        category=db_pattern.category,
+                        signal_indicators=db_pattern.signal_indicators or [],
+                        confidence_adjustment=db_pattern.confidence_adjustment,
+                        occurrence_count=db_pattern.occurrence_count,
+                        success_rate=db_pattern.success_rate,
+                    )
+                    self.patterns[db_pattern.pattern_id] = pattern
+
+            logger.info(f"Loaded {len(self.patterns)} patterns from DB into memory cache")
+
+        except Exception as e:
+            logger.warning(f"Failed to load patterns from DB (non-fatal, starting empty): {e}")
 
     async def get_confidence_adjustment(self, service: str, category: str) -> float:
         """
@@ -221,7 +330,7 @@ class LearningEngine:
                 from sqlalchemy import func, select
 
                 # Get incidents from last N days
-                since = datetime.utcnow() - timedelta(days=days)
+                since = datetime.now(timezone.utc) - timedelta(days=days)
 
                 # Count total incidents
                 stmt = select(func.count()).select_from(Incident).where(Incident.detected_at >= since)

@@ -95,6 +95,15 @@ class AIIncidentGenerator:
         self.is_running = False
         logger.info("AI incident generator stopped")
 
+    async def generate_once(self) -> None:
+        """
+        Public facade for Celery tasks — run a single generation cycle.
+
+        Celery monitoring tasks call this instead of the private
+        _generate_incidents() so the contract is explicit (S1 fix).
+        """
+        await self._generate_incidents()
+
     async def _generate_incidents(self):
         """Generate AI-powered incidents for this cycle."""
         try:

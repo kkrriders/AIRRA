@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from app.models.action import Action
     from app.models.engineer_review import EngineerReview
     from app.models.engineer import Engineer
+    from app.models.incident_event import IncidentEvent
 
 
 class IncidentStatus(str, enum.Enum):

@@ -1,6 +1,6 @@
 """Action API endpoints."""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -94,7 +94,7 @@ async def execute_action(
 
     try:
         # Simulate execution
-        execution_start = datetime.utcnow()
+        execution_start = datetime.now(timezone.utc)
 
         # In dry-run mode, we just log what would happen
         if action.execution_mode == "dry_run":
@@ -110,7 +110,7 @@ async def execute_action(
             # This is where you'd integrate with Kubernetes, AWS, etc.
             raise NotImplementedError("Live execution not implemented in MVP")
 
-        execution_end = datetime.utcnow()
+        execution_end = datetime.now(timezone.utc)
         duration_seconds = int((execution_end - execution_start).total_seconds())
 
         # Update action with result
@@ -126,7 +126,7 @@ async def execute_action(
 
         if incident and success:
             incident.status = IncidentStatus.RESOLVED
-            incident.resolved_at = datetime.utcnow()
+            incident.resolved_at = datetime.now(timezone.utc)
             incident.resolution_time_seconds = int(
                 (incident.resolved_at - incident.detected_at).total_seconds()
             )

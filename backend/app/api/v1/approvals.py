@@ -5,7 +5,7 @@ Senior Engineering Note:
 This implements the human-in-the-loop pattern, critical for production safety.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -75,7 +75,7 @@ async def approve_action(
     # Update action
     action.status = ActionStatus.APPROVED
     action.approved_by = approval_data.approved_by
-    action.approved_at = datetime.utcnow()
+    action.approved_at = datetime.now(timezone.utc)
     action.execution_mode = approval_data.execution_mode
 
     # Update incident status

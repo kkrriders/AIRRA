@@ -15,6 +15,7 @@ from typing import AsyncGenerator
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -86,6 +87,131 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+async def _manage_demo_incidents() -> None:
+    """
+    Manage static demo incidents on startup.
+
+    Steps:
+    1. Delete simulation incidents older than 24 hours.
+    2. Progress recent incidents through the lifecycle (no auto-approval).
+    3. Create new static incidents if active count falls below 3.
+
+    Extracted from the lifespan function to keep startup orchestration readable
+    and to make this block independently testable (SUG-4 fix).
+    """
+    from datetime import datetime, timedelta, timezone
+    from hashlib import md5
+    from sqlalchemy import select, delete
+    from app.models.incident import Incident, IncidentStatus
+    from app.core.simulation.scenario_runner import get_scenario_runner
+
+    try:
+        runner = get_scenario_runner()
+
+        async with get_db_context() as db:
+            # Step 1: Clean up old simulation incidents (older than 24 hours)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+            old_sims_query = select(Incident).where(
+                Incident.detection_source == "quick_incident_ui",
+                Incident.detected_at < cutoff_time
+            )
+            old_sims = await db.execute(old_sims_query)
+            old_sim_incidents = old_sims.scalars().all()
+
+            if old_sim_incidents:
+                delete_query = delete(Incident).where(
+                    Incident.detection_source == "quick_incident_ui",
+                    Incident.detected_at < cutoff_time
+                )
+                await db.execute(delete_query)
+                await db.commit()
+                logger.info(f"Cleaned up {len(old_sim_incidents)} old simulation incidents (>24h)")
+
+            # Step 2: Progress existing recent simulation incidents through lifecycle
+            recent_sims_query = select(Incident).where(
+                Incident.detection_source == "quick_incident_ui",
+                Incident.detected_at >= cutoff_time,
+                Incident.status != IncidentStatus.RESOLVED
+            ).order_by(Incident.detected_at.asc())
+
+            recent_sims = await db.execute(recent_sims_query)
+            recent_incidents = recent_sims.scalars().all()
+
+            # Progress incidents through realistic lifecycle.
+            # IMPORTANT: We do NOT auto-approve - that would be a security risk.
+            # Only progress incidents that have already been manually approved.
+            for incident in recent_incidents:
+                age_minutes = (datetime.now(timezone.utc) - incident.detected_at).total_seconds() / 60
+
+                if age_minutes > 120 and incident.status == IncidentStatus.PENDING_APPROVAL:
+                    incident.status = IncidentStatus.ESCALATED
+                    logger.info(f"Escalated incident {incident.id} (unaddressed for {age_minutes:.0f}min)")
+                elif age_minutes > 30 and incident.status == IncidentStatus.APPROVED:
+                    incident.status = IncidentStatus.EXECUTING
+                    logger.info(f"Progressed incident {incident.id} to EXECUTING (age: {age_minutes:.0f}min)")
+                elif age_minutes > 15 and incident.status == IncidentStatus.EXECUTING:
+                    incident.status = IncidentStatus.RESOLVED
+                    incident.resolved_at = datetime.now(timezone.utc)
+                    incident.resolution_summary = "Demo: Simulated successful resolution"
+                    logger.info(f"Resolved incident {incident.id} (execution complete)")
+
+            await db.commit()
+            logger.info(f"Progressed {len(recent_incidents)} recent simulation incidents through lifecycle")
+
+            # Step 3: Create new simulation incidents if needed (keep 3-5 active).
+            # NOTE: reading .status after db.commit() works here only because the
+            # session is configured with expire_on_commit=False (see database.py).
+            # With the default expire_on_commit=True, SQLAlchemy would expire all
+            # attributes on commit; accessing them in an async session would then
+            # raise MissingGreenlet (async sessions cannot do implicit lazy loads).
+            active_count = len([i for i in recent_incidents if i.status != IncidentStatus.RESOLVED])
+
+            if active_count < 3:
+                all_scenarios = [
+                    "memory_leak_gradual",
+                    "cpu_spike_traffic_surge",
+                    "latency_spike_database",
+                    "pod_crash_loop",
+                    "dependency_failure_timeout"
+                ]
+
+                # Rotate through scenarios using current hour so each restart
+                # gets a different starting scenario.
+                current_hour_seed = int(datetime.now(timezone.utc).strftime("%Y%m%d%H"))
+                rotation_index = current_hour_seed % len(all_scenarios)
+
+                scenarios_to_create = [
+                    all_scenarios[(rotation_index + i) % len(all_scenarios)]
+                    for i in range(3 - active_count)
+                ]
+
+                logger.info(
+                    f"Creating {len(scenarios_to_create)} static demo incidents "
+                    f"(rotation index: {rotation_index})"
+                )
+
+                for scenario_id in scenarios_to_create:
+                    try:
+                        result = await runner.run_scenario(
+                            scenario_id=scenario_id,
+                            db=db,
+                            auto_analyze=True,
+                            execution_mode="demo",
+                        )
+                        logger.info(
+                            f"Created STATIC demo incident: {result.incident_id} "
+                            f"from scenario {scenario_id}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to create demo incident for {scenario_id}: {str(e)}")
+            else:
+                logger.info(f"Sufficient active incidents ({active_count}), skipping creation")
+
+        logger.info("Demo incident management complete")
+    except Exception as e:
+        logger.warning(f"Failed to manage demo incidents (non-fatal): {str(e)}", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """
@@ -115,127 +241,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         logger.info("Initializing database...")
         await init_db()
 
-    # Start background anomaly monitor
-    from app.services.anomaly_monitor import start_anomaly_monitor
-    logger.info("Starting anomaly detection monitor...")
-    await start_anomaly_monitor()
+    # Warm LearningEngine pattern cache from DB (non-fatal if DB has no patterns yet)
+    from app.services.learning_engine import get_learning_engine
+    logger.info("Loading learned patterns from database...")
+    await get_learning_engine().load_patterns_from_db()
 
-    # Start AI incident generator (development only)
-    if settings.environment == "development":
-        from app.services.ai_incident_generator import start_ai_generator
-        logger.info("Starting AI incident generator...")
-        await start_ai_generator()
+    # Note: anomaly monitoring and AI incident generation are now handled by
+    # Celery Beat + celery-worker containers. No asyncio.create_task() needed here.
 
     # Auto-create and manage demo incidents in development mode
     # This creates STATIC incidents on startup for immediate demo
     # AI-generated incidents will appear over time (every 30-60 min)
     if settings.environment == "development":
         logger.info("Development mode: Managing static demo incidents...")
-        try:
-            from datetime import datetime, timedelta, timezone
-            from sqlalchemy import select, delete
-            from app.models.incident import Incident, IncidentStatus
-            from app.core.simulation.scenario_runner import get_scenario_runner
-
-            runner = get_scenario_runner()
-
-            async with get_db_context() as db:
-                # Step 1: Clean up old simulation incidents (older than 24 hours)
-                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
-                old_sims_query = select(Incident).where(
-                    Incident.detection_source == "quick_incident_ui",
-                    Incident.detected_at < cutoff_time
-                )
-                old_sims = await db.execute(old_sims_query)
-                old_sim_incidents = old_sims.scalars().all()
-
-                if old_sim_incidents:
-                    delete_query = delete(Incident).where(
-                        Incident.detection_source == "quick_incident_ui",
-                        Incident.detected_at < cutoff_time
-                    )
-                    await db.execute(delete_query)
-                    await db.commit()
-                    logger.info(f"Cleaned up {len(old_sim_incidents)} old simulation incidents (>24h)")
-
-                # Step 2: Progress existing recent simulation incidents through lifecycle
-                recent_sims_query = select(Incident).where(
-                    Incident.detection_source == "quick_incident_ui",
-                    Incident.detected_at >= cutoff_time,
-                    Incident.status != IncidentStatus.RESOLVED
-                ).order_by(Incident.detected_at.asc())
-
-                recent_sims = await db.execute(recent_sims_query)
-                recent_incidents = recent_sims.scalars().all()
-
-                # Progress incidents through realistic lifecycle
-                # IMPORTANT: We do NOT auto-approve - that would be dangerous!
-                # Only progress incidents that have already been manually approved
-                for idx, incident in enumerate(recent_incidents):
-                    age_minutes = (datetime.now(timezone.utc) - incident.detected_at).total_seconds() / 60
-
-                    # Realistic progression - no auto-approval!
-                    if age_minutes > 120 and incident.status == IncidentStatus.PENDING_APPROVAL:
-                        # After 2 hours without approval, escalate (realistic behavior)
-                        incident.status = IncidentStatus.ESCALATED
-                        logger.info(f"Escalated incident {incident.id} (unaddressed for {age_minutes:.0f}min)")
-                    elif age_minutes > 30 and incident.status == IncidentStatus.APPROVED:
-                        # If approved, simulate execution after 30 minutes
-                        incident.status = IncidentStatus.EXECUTING
-                        logger.info(f"Progressed incident {incident.id} to EXECUTING (age: {age_minutes:.0f}min)")
-                    elif age_minutes > 15 and incident.status == IncidentStatus.EXECUTING:
-                        # After 15 min of execution, mark as resolved (demo only)
-                        incident.status = IncidentStatus.RESOLVED
-                        incident.resolved_at = datetime.now(timezone.utc)
-                        incident.resolution_summary = "Demo: Simulated successful resolution"
-                        logger.info(f"Resolved incident {incident.id} (execution complete)")
-
-                await db.commit()
-                logger.info(f"Progressed {len(recent_incidents)} recent simulation incidents through lifecycle")
-
-                # Step 3: Create new simulation incidents if needed (keep 3-5 active)
-                active_count = len([i for i in recent_incidents if i.status != IncidentStatus.RESOLVED])
-
-                if active_count < 3:
-                    # All 5 available scenarios
-                    all_scenarios = [
-                        "memory_leak_gradual",
-                        "cpu_spike_traffic_surge",
-                        "latency_spike_database",
-                        "pod_crash_loop",
-                        "dependency_failure_timeout"
-                    ]
-
-                    # Rotate through scenarios - use hash of current hour to pick different ones
-                    from hashlib import md5
-                    current_hour_seed = int(datetime.utcnow().strftime("%Y%m%d%H"))
-                    rotation_index = current_hour_seed % len(all_scenarios)
-
-                    # Select 3 scenarios starting from rotation index
-                    scenarios_to_create = [
-                        all_scenarios[(rotation_index + i) % len(all_scenarios)]
-                        for i in range(3 - active_count)
-                    ]
-
-                    logger.info(f"Creating {len(scenarios_to_create)} static demo incidents (rotation index: {rotation_index})")
-
-                    for scenario_id in scenarios_to_create:
-                        try:
-                            result = await runner.run_scenario(
-                                scenario_id=scenario_id,
-                                db=db,
-                                auto_analyze=True,
-                                execution_mode="demo",
-                            )
-                            logger.info(f"Created STATIC demo incident: {result.incident_id} from scenario {scenario_id}")
-                        except Exception as e:
-                            logger.warning(f"Failed to create demo incident for {scenario_id}: {str(e)}")
-                else:
-                    logger.info(f"Sufficient active incidents ({active_count}), skipping creation")
-
-            logger.info("Demo incident management complete")
-        except Exception as e:
-            logger.warning(f"Failed to manage demo incidents (non-fatal): {str(e)}", exc_info=True)
+        await _manage_demo_incidents()
 
     logger.info("AIRRA Backend started successfully")
 
@@ -243,13 +262,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Shutdown
     logger.info("Shutting down AIRRA Backend...")
-    from app.services.anomaly_monitor import stop_anomaly_monitor
-    await stop_anomaly_monitor()
-
-    # Stop AI incident generator
-    if settings.environment == "development":
-        from app.services.ai_incident_generator import stop_ai_generator
-        await stop_ai_generator()
 
     # Close LLM cache Redis connection
     from app.services.llm_client import llm_cache
@@ -272,6 +284,9 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
     lifespan=lifespan,
 )
+
+# Expose /metrics for Prometheus scraping (p50/p95 latency, request rate, error rate)
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 # Add security middleware (order matters - added first, executed last)
 # Security headers on all responses

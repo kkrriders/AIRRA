@@ -8,13 +8,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
-from app.core.decision.action_selector import ActionSelector
-from app.core.perception.anomaly_detector import AnomalyDetector, categorize_anomaly
-from app.core.reasoning.hypothesis_generator import HypothesisGenerator, rank_hypotheses
 from app.database import get_db
-from app.models.action import Action, ActionStatus
-from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
 from app.schemas.incident import (
     IncidentCreate,
@@ -31,8 +25,6 @@ from app.schemas.assignment import (
     AssignmentInfo,
 )
 from app.api.rate_limit import llm_rate_limit
-from app.services.llm_client import get_llm_client
-from app.services.prometheus_client import get_prometheus_client
 from app.services.incident_assigner import incident_assigner
 from app.services.event_logger import event_logger
 
@@ -222,6 +214,7 @@ async def update_incident(
 @router.post(
     "/{incident_id}/analyze",
     response_model=dict,
+    status_code=202,
     dependencies=[Depends(llm_rate_limit)],
 )
 async def analyze_incident(
@@ -229,19 +222,17 @@ async def analyze_incident(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Trigger hypothesis generation for an incident.
+    Trigger hypothesis generation for an incident (non-blocking).
 
-    This endpoint:
-    1. Fetches metrics from Prometheus
-    2. Detects anomalies
-    3. Generates hypotheses using LLM
-    4. Creates hypothesis records
-    5. Updates incident status
+    Returns 202 Accepted immediately and enqueues the analysis as a Celery task.
+    Poll GET /incidents/{incident_id} to track status:
+      ANALYZING → PENDING_APPROVAL (success) | FAILED (error)
 
     Senior Engineering Note:
-    This is the core workflow that ties together all layers.
+    The LLM call takes 3–8s. Running it inline blocks the HTTP connection and
+    prevents horizontal scaling. Moving it to a Celery task decouples throughput
+    from LLM latency and enables retries on failure.
     """
-    # Get incident
     stmt = select(Incident).where(Incident.id == incident_id)
     result = await db.execute(stmt)
     incident = result.scalar_one_or_none()
@@ -255,134 +246,31 @@ async def analyze_incident(
             detail=f"Incident must be in DETECTED status (current: {incident.status.value})",
         )
 
-    # Update status
+    # Transition to ANALYZING immediately — fast DB write, no LLM
     incident.status = IncidentStatus.ANALYZING
     await db.commit()
 
-    try:
-        # Get metrics from Prometheus
-        prom_client = get_prometheus_client()
-        service_metrics = await prom_client.get_service_metrics(
-            service_name=incident.affected_service,
-            lookback_minutes=5,
-        )
+    # Enqueue analysis to Celery worker — returns instantly.
+    # send_task() dispatches by registered task name string rather than importing
+    # the task module, so the API process has no import-time dependency on the
+    # worker package. Routed to the dedicated 'analysis' queue (I2 + S2 fix).
+    from app.worker.celery_app import celery_app
+    celery_app.send_task(
+        "app.worker.tasks.analysis.analyze_incident",
+        args=[str(incident_id)],
+        queue="analysis",
+    )
 
-        # Detect anomalies
-        anomaly_detector = AnomalyDetector(
-            threshold_sigma=settings.anomaly_threshold_sigma,
-        )
+    logger.info(
+        f"Analysis enqueued for incident {incident_id}",
+        extra={"incident_id": str(incident_id)},
+    )
 
-        all_metric_results = []
-        for metric_name, results in service_metrics.items():
-            all_metric_results.extend(results)
-
-        anomalies = anomaly_detector.detect_multiple(all_metric_results)
-
-        if not anomalies:
-            logger.warning(f"No anomalies detected for incident {incident_id}")
-            incident.status = IncidentStatus.RESOLVED
-            await db.commit()
-            return {
-                "status": "no_anomalies",
-                "message": "No anomalies detected in current metrics",
-            }
-
-        # Generate hypotheses using LLM
-        llm_client = get_llm_client()
-        hypothesis_generator = HypothesisGenerator(llm_client)
-
-        service_context = incident.context.copy()
-
-        hypotheses_response, llm_response = await hypothesis_generator.generate(
-            anomalies=anomalies,
-            service_name=incident.affected_service,
-            service_context=service_context,
-        )
-
-        # Create hypothesis records
-        ranked_hypotheses = rank_hypotheses(hypotheses_response.hypotheses)
-
-        for rank, hypothesis_item in ranked_hypotheses:
-            hypothesis = Hypothesis(
-                incident_id=incident.id,
-                description=hypothesis_item.description,
-                category=hypothesis_item.category,
-                confidence_score=hypothesis_item.confidence_score,
-                rank=rank,
-                evidence={
-                    "items": [e.model_dump() for e in hypothesis_item.evidence],
-                    "anomalies": [
-                        {
-                            "metric": a.metric_name,
-                            "current_value": a.current_value,
-                            "expected_value": a.expected_value,
-                            "deviation_sigma": a.deviation_sigma,
-                            "category": categorize_anomaly(a),
-                        }
-                        for a in anomalies
-                    ],
-                },
-                supporting_signals=[a.metric_name for a in anomalies],
-                llm_model=llm_response.model,
-                llm_prompt_tokens=llm_response.prompt_tokens,
-                llm_completion_tokens=llm_response.completion_tokens,
-                llm_reasoning=hypothesis_item.reasoning,
-            )
-            db.add(hypothesis)
-
-        # Generate action recommendation for top hypothesis
-        action_selector = ActionSelector()
-        top_hypothesis = ranked_hypotheses[0][1]
-
-        action_recommendation = action_selector.select(
-            hypothesis=top_hypothesis,
-            service_name=incident.affected_service,
-            service_context=service_context,
-        )
-
-        if action_recommendation:
-            action = Action(
-                incident_id=incident.id,
-                action_type=action_recommendation.action_type,
-                name=action_recommendation.name,
-                description=action_recommendation.description,
-                target_service=action_recommendation.target_service,
-                target_resource=action_recommendation.target_resource,
-                risk_level=action_recommendation.risk_level,
-                risk_score=action_recommendation.risk_score,
-                blast_radius=action_recommendation.blast_radius,
-                requires_approval=action_recommendation.requires_approval,
-                parameters=action_recommendation.parameters,
-                execution_mode="dry_run" if settings.dry_run_mode else "live",
-                status=ActionStatus.PENDING_APPROVAL,
-            )
-            db.add(action)
-
-        # Update incident status
-        incident.status = IncidentStatus.PENDING_APPROVAL
-        await db.commit()
-
-        logger.info(
-            f"Generated {len(ranked_hypotheses)} hypotheses for incident {incident_id}",
-            extra={
-                "incident_id": str(incident_id),
-                "hypotheses_count": len(ranked_hypotheses),
-                "tokens_used": llm_response.total_tokens,
-            },
-        )
-
-        return {
-            "status": "success",
-            "hypotheses_generated": len(ranked_hypotheses),
-            "action_recommended": action_recommendation is not None,
-            "tokens_used": llm_response.total_tokens,
-        }
-
-    except Exception as e:
-        logger.error(f"Analysis failed for incident {incident_id}: {str(e)}", exc_info=True)
-        incident.status = IncidentStatus.FAILED
-        await db.commit()
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+    return {
+        "status": "accepted",
+        "incident_id": str(incident_id),
+        "poll": f"/api/v1/incidents/{incident_id}",
+    }
 
 
 # ============================================================================

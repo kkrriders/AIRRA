@@ -8,7 +8,7 @@ Senior Engineering Note:
 - Multi-channel support
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query

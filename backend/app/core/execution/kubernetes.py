@@ -12,7 +12,7 @@ Senior Engineering Note:
 import asyncio
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.core.execution.base import ActionExecutor, ExecutionResult, ExecutionStatus
@@ -87,7 +87,7 @@ class KubernetesPodRestartExecutor(ActionExecutor):
         - deployment: Deployment name
         - pod_name: Specific pod to restart (optional)
         """
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
 
         try:
             namespace = parameters.get("namespace", "default")
@@ -318,8 +318,8 @@ class KubernetesPodRestartExecutor(ActionExecutor):
         return ExecutionResult(
             status=ExecutionStatus.SKIPPED,
             message="Rollback not applicable for pod restart",
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
             duration_seconds=0,
             dry_run=self.dry_run,
         )
@@ -359,7 +359,7 @@ class KubernetesScaleExecutor(ActionExecutor):
         - deployment: Deployment name
         - replicas: Target replica count
         """
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
 
         try:
             namespace = parameters.get("namespace", "default")
@@ -518,7 +518,7 @@ class KubernetesScaleExecutor(ActionExecutor):
         execution_result: ExecutionResult,
     ) -> ExecutionResult:
         """Rollback to previous replica count."""
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
 
         try:
             details = execution_result.details

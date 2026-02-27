@@ -6,7 +6,7 @@ This allows creating unlimited variations of incidents for realistic demo timeli
 """
 import logging
 from typing import Dict, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
@@ -184,7 +184,7 @@ Please generate:
 
 Make the scenario realistic and educational for demonstrating an AI-powered incident response system.
 
-Current timestamp: {datetime.utcnow().isoformat()}
+Current timestamp: {datetime.now(timezone.utc).isoformat()}
 """
 
     def _convert_to_scenario(
@@ -242,7 +242,7 @@ Current timestamp: {datetime.utcnow().isoformat()}
                 **generated.context,
                 "generated_by": "llm",
                 "generation_prompt": prompt,
-                "generated_at": datetime.utcnow().isoformat(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
             },
             tags=tags,
             difficulty=difficulty,

@@ -17,7 +17,7 @@ Senior Engineering Note:
 import json
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -227,12 +227,12 @@ class OperatorFeedbackCollector:
                 action_success_rate=0.0,
                 common_mistakes=[],
                 improvement_suggestions=[],
-                time_period_start=datetime.utcnow(),
-                time_period_end=datetime.utcnow(),
+                time_period_start=datetime.now(timezone.utc),
+                time_period_end=datetime.now(timezone.utc),
             )
 
         # Filter by time period
-        cutoff_time = datetime.utcnow().timestamp() - (time_period_days * 86400)
+        cutoff_time = datetime.now(timezone.utc).timestamp() - (time_period_days * 86400)
         recent_feedback = [
             f for f in feedback_records if f.timestamp.timestamp() >= cutoff_time
         ]
@@ -330,12 +330,12 @@ class OperatorFeedbackCollector:
         time_period_start = (
             min(f.timestamp for f in recent_feedback)
             if recent_feedback
-            else datetime.utcnow()
+            else datetime.now(timezone.utc)
         )
         time_period_end = (
             max(f.timestamp for f in recent_feedback)
             if recent_feedback
-            else datetime.utcnow()
+            else datetime.now(timezone.utc)
         )
 
         return FeedbackSummary(

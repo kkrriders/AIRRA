@@ -9,7 +9,7 @@ Each scenario includes:
 - Tags and difficulty levels for organization
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -189,7 +189,7 @@ SCENARIO_MEMORY_LEAK = IncidentScenario(
         "recent_deployments": [
             {
                 "version": "v2.3.1",
-                "deployed_at": (datetime.utcnow() - timedelta(hours=6)).isoformat(),
+                "deployed_at": (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat(),
                 "changes": ["Added Redis connection pooling", "Refactored payment processing"],
             }
         ],
@@ -314,7 +314,7 @@ SCENARIO_LATENCY_DATABASE = IncidentScenario(
         "recent_deployments": [
             {
                 "version": "v2.4.0",
-                "deployed_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
+                "deployed_at": (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
                 "changes": ["Added transaction history feature", "New complex JOIN queries"],
             }
         ],
@@ -380,7 +380,7 @@ SCENARIO_POD_CRASH = IncidentScenario(
         "recent_deployments": [
             {
                 "version": "v2.5.0",
-                "deployed_at": (datetime.utcnow() - timedelta(minutes=20)).isoformat(),
+                "deployed_at": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
                 "changes": [
                     "Updated database migration",
                     "Changed environment variable names",

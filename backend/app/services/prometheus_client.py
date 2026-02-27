@@ -8,7 +8,7 @@ Senior Engineering Note:
 - Async HTTP requests
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -189,16 +189,18 @@ class PrometheusClient:
         This is a convenience method that queries multiple metrics in parallel.
         In production, you'd customize these queries based on your stack.
         """
-        end = datetime.utcnow()
+        end = datetime.now(timezone.utc)
         start = end - timedelta(minutes=lookback_minutes)
 
-        # Define common SRE metrics (Golden Signals)
+        # Query the demo Gauge metrics exposed at /demo/metrics.
+        # These are scraped by the 'airra-demo-services' Prometheus job (15 s interval).
+        # Gauge queries work directly with query_range — no rate() wrapper needed.
         queries = {
-            "request_rate": f'rate(http_requests_total{{service="{service_name}"}}[5m])',
-            "error_rate": f'rate(http_requests_total{{service="{service_name}",status=~"5.."}}[5m])',
-            "latency_p95": f'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{{service="{service_name}"}}[5m]))',
-            "cpu_usage": f'rate(process_cpu_seconds_total{{service="{service_name}"}}[5m])',
-            "memory_usage": f'process_resident_memory_bytes{{service="{service_name}"}}',
+            "request_rate": f'airra_demo_request_rate{{service="{service_name}"}}',
+            "error_rate":   f'airra_demo_error_rate{{service="{service_name}"}}',
+            "latency_p95":  f'airra_demo_latency_p95{{service="{service_name}"}}',
+            "cpu_usage":    f'airra_demo_cpu_usage{{service="{service_name}"}}',
+            "memory_usage": f'airra_demo_memory_bytes{{service="{service_name}"}}',
         }
 
         results = {}

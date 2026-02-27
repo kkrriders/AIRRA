@@ -12,7 +12,7 @@ import hashlib
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -151,7 +151,7 @@ class AlertDeduplicator:
             return []
 
         # Filter by age if requested
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if max_age_seconds is not None:
             cutoff = now - timedelta(seconds=max_age_seconds)
             alerts = [a for a in alerts if a.timestamp >= cutoff]

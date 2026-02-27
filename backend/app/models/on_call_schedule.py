@@ -8,7 +8,7 @@ Senior Engineering Note:
 - Integration with engineer availability
 """
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
@@ -145,7 +145,7 @@ class OnCallSchedule(Base, TimestampMixin):
         if not self.is_active:
             return False
 
-        check_time = now or datetime.utcnow()
+        check_time = now or datetime.now(timezone.utc)
         return self.start_time <= check_time <= self.end_time
 
     def to_dict(self) -> dict:

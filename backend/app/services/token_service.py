@@ -10,7 +10,7 @@ Senior Engineering Note:
 import hashlib
 import hmac
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -59,7 +59,7 @@ class TokenService:
         token = f"{payload}:{signature}"
 
         # Calculate expiration
-        expires_at = datetime.utcnow() + timedelta(hours=expiry_hours)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
 
         return token, expires_at
 
@@ -84,7 +84,7 @@ class TokenService:
         """
         try:
             # Check expiration
-            if datetime.utcnow() > expires_at:
+            if datetime.now(timezone.utc) > expires_at:
                 return False, "Token has expired"
 
             # Parse token

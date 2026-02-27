@@ -13,7 +13,7 @@ Features:
 import hashlib
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -218,7 +218,7 @@ async def find_duplicate_incident(
         logger.debug(f"Using severity-based lookback: {lookback_minutes}min for severity={severity}")
 
     # Calculate time window
-    cutoff_time = datetime.utcnow() - timedelta(minutes=lookback_minutes)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
 
     # Search for existing incidents with same fingerprint
     # Use FOR UPDATE to lock the row and prevent concurrent duplicate creation
@@ -378,7 +378,7 @@ async def create_or_update_incident(
             existing_context = duplicate.context or {}
             existing_context.update(context)
             existing_context['duplicate_count'] = existing_context.get('duplicate_count', 0) + 1
-            existing_context['last_duplicate_at'] = datetime.utcnow().isoformat()
+            existing_context['last_duplicate_at'] = datetime.now(timezone.utc).isoformat()
             duplicate.context = existing_context
 
         # Update severity if new one is higher
@@ -410,7 +410,7 @@ async def create_or_update_incident(
         affected_components=affected_components or [],
         metrics_snapshot=metrics_snapshot or {},
         context=context or {},
-        detected_at=datetime.utcnow(),
+        detected_at=datetime.now(timezone.utc),
     )
 
     db.add(new_incident)

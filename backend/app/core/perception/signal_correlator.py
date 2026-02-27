@@ -11,7 +11,7 @@ Senior Engineering Note:
 - Eliminates false positives through multi-signal validation
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -53,7 +53,7 @@ class CorrelatedIncident(BaseModel):
     severity_score: float = Field(..., ge=0.0, le=1.0)
     signals: list[Signal] = Field(default_factory=list)
     confidence: float = Field(..., ge=0.0, le=1.0)
-    correlation_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    correlation_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SignalCorrelator:

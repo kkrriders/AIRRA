@@ -4,9 +4,9 @@ Celery application configuration for AIRRA.
 Replaces asyncio.create_task()-based background services with distributed tasks.
 Beat handles scheduling so only one scheduler runs even with N API replicas.
 
-Scheduler: redbeat.RedBeatScheduler stores schedule state in Redis, so Beat
-survives container restarts without firing all tasks immediately (unlike
-PersistentScheduler which uses a local file that is lost on restart).
+Scheduler: PersistentScheduler (Celery built-in) stores schedule state in a
+local shelve file. Tasks fire once on Beat startup after a container restart,
+which is acceptable for AIRRA's 1-minute and 30-minute intervals.
 """
 from celery import Celery
 
@@ -14,7 +14,7 @@ from app.config import settings
 
 # Named constants for Beat schedule intervals (N5)
 ANOMALY_CHECK_INTERVAL_SECONDS: float = 60.0      # every minute
-AI_GENERATOR_INTERVAL_SECONDS: float = 30 * 60.0  # every 30 minutes
+AI_GENERATOR_INTERVAL_SECONDS: float = 5 * 60.0   # every 5 minutes
 
 celery_app = Celery(
     "airra",
@@ -45,10 +45,6 @@ celery_app.conf.update(
     task_routes={
         "app.worker.tasks.analysis.analyze_incident": {"queue": "analysis"},
     },
-    # redbeat: stores last-run timestamps in Redis so Beat survives restarts
-    # without firing all tasks immediately (C3 fix — replaces PersistentScheduler)
-    beat_scheduler="redbeat.RedBeatScheduler",
-    redbeat_redis_url=str(settings.redis_url),
     beat_schedule={
         "anomaly-monitor": {
             "task": "app.worker.tasks.monitoring.run_anomaly_check",

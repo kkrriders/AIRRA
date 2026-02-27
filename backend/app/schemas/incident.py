@@ -7,7 +7,7 @@ Senior Engineering Note:
 - ConfigDict for ORM integration
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, TYPE_CHECKING
 from uuid import UUID
 
@@ -33,7 +33,7 @@ class IncidentBase(BaseModel):
 class IncidentCreate(IncidentBase):
     """Schema for creating a new incident."""
 
-    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     detection_source: str = Field(default="prometheus", max_length=100)
     metrics_snapshot: dict = Field(default_factory=dict)
     context: dict = Field(default_factory=dict)

@@ -8,7 +8,7 @@ Coordinates:
 """
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Optional, Union
 from uuid import UUID
 
@@ -43,7 +43,7 @@ class SimulationResult:
         self.scenario_id = scenario_id
         self.incident_id = str(incident_id) if incident_id else None
         self.status = status
-        self.started_at = started_at or datetime.utcnow()
+        self.started_at = started_at or datetime.now(timezone.utc)
         self.completed_at: Optional[datetime] = None
         self.error = error
         self.hypotheses_count = 0
@@ -68,13 +68,13 @@ class SimulationResult:
     def mark_completed(self):
         """Mark simulation as completed."""
         self.status = "completed"
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
 
     def mark_failed(self, error: str):
         """Mark simulation as failed."""
         self.status = "failed"
         self.error = error
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
 
 
 class ScenarioRunner:

@@ -7,7 +7,7 @@ incidents. The mock service exposes Prometheus endpoints with these metrics.
 import asyncio
 import logging
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -106,7 +106,7 @@ class MetricInjector:
                 "mock_service_url": self.mock_service_url,
                 "auto_stop_scheduled": auto_stop,
                 "duration_seconds": scenario.duration_seconds if auto_stop else None,
-                "injected_at": datetime.utcnow().isoformat(),
+                "injected_at": datetime.now(timezone.utc).isoformat(),
             }
 
         except httpx.HTTPError as e:
@@ -160,7 +160,7 @@ class MetricInjector:
             return {
                 "status": "stopped",
                 "previous_scenario_id": previous_scenario,
-                "stopped_at": datetime.utcnow().isoformat(),
+                "stopped_at": datetime.now(timezone.utc).isoformat(),
             }
 
         except httpx.HTTPError as e:

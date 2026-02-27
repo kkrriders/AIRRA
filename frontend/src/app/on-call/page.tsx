@@ -18,7 +18,7 @@ interface OnCallEngineer {
     name: string;
     email: string;
     status: string;
-    role: string;
+    department: string | null;
   };
   schedule: {
     id: string;
@@ -189,9 +189,11 @@ export default function OnCallDashboard() {
                           <div>
                             <p className="font-semibold text-gray-900">
                               {oncall.engineer.name}
-                              <span className="ml-2 text-sm text-gray-500">
-                                ({oncall.engineer.role})
-                              </span>
+                              {oncall.engineer.department && (
+                                <span className="ml-2 text-sm text-gray-500">
+                                  ({oncall.engineer.department})
+                                </span>
+                              )}
                             </p>
                             <p className="text-sm text-gray-600">{oncall.engineer.email}</p>
                             {oncall.schedule.team && (

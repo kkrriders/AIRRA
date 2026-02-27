@@ -11,7 +11,7 @@ Senior Engineering Note:
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -122,7 +122,7 @@ class PostActionVerifier:
                 improvement_percentage={},
                 recommendation="rollback",
                 stabilization_seconds=0,
-                verification_timestamp=datetime.utcnow(),
+                verification_timestamp=datetime.now(timezone.utc),
             )
 
         # Wait for stabilization
@@ -173,7 +173,7 @@ class PostActionVerifier:
             improvement_percentage=improvements,
             recommendation=recommendation,
             stabilization_seconds=self.stabilization_window,
-            verification_timestamp=datetime.utcnow(),
+            verification_timestamp=datetime.now(timezone.utc),
         )
 
     async def _fetch_health_metrics(
@@ -191,7 +191,7 @@ class PostActionVerifier:
         Returns:
             HealthMetrics with current values
         """
-        metrics = HealthMetrics(timestamp=time or datetime.utcnow())
+        metrics = HealthMetrics(timestamp=time or datetime.now(timezone.utc))
 
         try:
             # Error rate (errors per minute)

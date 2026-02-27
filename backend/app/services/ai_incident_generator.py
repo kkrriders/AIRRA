@@ -123,17 +123,11 @@ class AIIncidentGenerator:
 
                         logger.info(f"Generating AI incident for {service} ({pattern})")
 
-                        response = await llm_client.chat_completion(
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": "You are an expert SRE generating realistic incident scenarios for training and demos."
-                                },
-                                {"role": "user", "content": prompt}
-                            ],
-                            temperature=0.9,  # Higher creativity
+                        response = await llm_client.generate(
+                            prompt=prompt,
+                            system_prompt="You are an expert SRE generating realistic incident scenarios for training and demos.",
+                            temperature=0.9,  # Higher creativity for varied incidents
                             max_tokens=500,
-                            # Use default model (Sonnet) - cost-effective for structured creative tasks
                         )
 
                         # Parse LLM response and create incident

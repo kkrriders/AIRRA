@@ -10,7 +10,7 @@ Senior Engineering Note:
 """
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.core.decision.blast_radius import BlastRadiusAssessment, BlastRadiusCalculator
@@ -176,7 +176,7 @@ class WhatIfSimulator:
             best_action = simulated_outcomes[0].action_type
             best_reasoning = simulated_outcomes[0].recommendation_reasoning
 
-        simulation_id = f"sim-{service_name}-{datetime.utcnow().timestamp()}"
+        simulation_id = f"sim-{service_name}-{datetime.now(timezone.utc).timestamp()}"
 
         comparison = SimulationComparison(
             service_name=service_name,
@@ -191,14 +191,14 @@ class WhatIfSimulator:
                 estimated_users_impacted=0,
                 revenue_impact_per_hour=0.0,
                 urgency_multiplier=1.0,
-                assessment_timestamp=datetime.utcnow(),
+                assessment_timestamp=datetime.now(timezone.utc),
                 details={},
             ),
             current_metrics=current_metrics,
             simulated_outcomes=simulated_outcomes,
             best_action=best_action,
             best_action_reasoning=best_reasoning,
-            simulation_timestamp=datetime.utcnow(),
+            simulation_timestamp=datetime.now(timezone.utc),
             simulation_id=simulation_id,
         )
 

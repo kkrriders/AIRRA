@@ -10,7 +10,7 @@ One-click incident creation that automatically:
 Perfect for UI workflows where users want immediate results.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException  # noqa: F811
 from pydantic import BaseModel, Field
@@ -188,7 +188,7 @@ async def create_and_analyze_incident(
             status=IncidentStatus.ANALYZING,  # Start in analyzing state
             affected_service=request.service_name,
             affected_components=[request.service_name],
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(timezone.utc),
             detection_source="quick_incident_ui",
             metrics_snapshot=metrics_snapshot,
             context=request.context or {},
@@ -333,7 +333,7 @@ def create_simulated_anomalies(service_name: str, metrics_snapshot: dict):
     # If metrics provided, use them
     if metrics_snapshot:
         anomalies = []
-        base_timestamp = datetime.utcnow()
+        base_timestamp = datetime.now(timezone.utc)
 
         for metric_name, value in metrics_snapshot.items():
             if isinstance(value, (int, float)):
@@ -378,7 +378,7 @@ def create_simulated_anomalies(service_name: str, metrics_snapshot: dict):
             expected_value=2147483648,  # 2GB
             deviation_sigma=4.5,
             confidence=0.90,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={"labels": {"service": service_name}},
         ),
         AnomalyDetection(
@@ -388,7 +388,7 @@ def create_simulated_anomalies(service_name: str, metrics_snapshot: dict):
             expected_value=0.5,
             deviation_sigma=4.2,
             confidence=0.88,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={"labels": {"service": service_name}},
         ),
         AnomalyDetection(
@@ -398,7 +398,7 @@ def create_simulated_anomalies(service_name: str, metrics_snapshot: dict):
             expected_value=500,
             deviation_sigma=3.8,
             confidence=0.85,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={"labels": {"service": service_name, "status": "500"}},
         ),
     ]

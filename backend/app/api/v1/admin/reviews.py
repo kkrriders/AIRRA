@@ -7,7 +7,7 @@ Senior Engineering Note:
 - Integration with incident lifecycle
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -87,7 +87,7 @@ async def assign_review_to_engineer(
     review = EngineerReview(
         incident_id=incident_id,
         engineer_id=assignment.engineer_id,
-        assigned_at=datetime.utcnow(),
+        assigned_at=datetime.now(timezone.utc),
         priority=assignment.priority,
         notes=assignment.notes,
     )
@@ -236,7 +236,7 @@ async def start_review(
         )
 
     review.status = ReviewStatus.IN_PROGRESS
-    review.started_at = datetime.utcnow()
+    review.started_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(review)
@@ -270,7 +270,7 @@ async def submit_review(
 
     # Update review with submission data
     review.status = ReviewStatus.SUBMITTED
-    review.submitted_at = datetime.utcnow()
+    review.submitted_at = datetime.now(timezone.utc)
     review.ai_hypotheses_reviewed = submission.ai_hypotheses_reviewed
     review.ai_confidence_assessment = submission.ai_confidence_assessment
     review.alternative_hypotheses = submission.alternative_hypotheses
@@ -478,7 +478,7 @@ async def make_review_decision(
 
     # Record decision
     review.decision = decision_request.decision
-    review.decision_made_at = datetime.utcnow()
+    review.decision_made_at = datetime.now(timezone.utc)
     review.decision_rationale = decision_request.rationale
 
     # Update statuses

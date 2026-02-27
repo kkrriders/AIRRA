@@ -87,6 +87,123 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+async def _seed_engineers() -> None:
+    """
+    Seed test engineers and on-call schedules if none exist.
+
+    Idempotent: skips entirely if any engineers are already in the database.
+    Creates a realistic escalation chain (primary → secondary → tertiary)
+    covering the next 7 days so the on-call dashboard shows data immediately.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select, func
+    from app.models.engineer import Engineer
+    from app.models.on_call_schedule import OnCallSchedule, OnCallPriority
+
+    try:
+        async with get_db_context() as db:
+            count = (
+                await db.execute(select(func.count()).select_from(Engineer))
+            ).scalar_one()
+
+            if count > 0:
+                logger.info(f"Skipping engineer seed: {count} engineers already exist")
+                return
+
+            now = datetime.now(timezone.utc)
+            week_end = now + timedelta(days=7)
+
+            engineers_data = [
+                dict(
+                    name="Alice Chen",
+                    email="alice.chen@example.com",
+                    expertise=["kubernetes", "aws", "terraform", "prometheus"],
+                    department="Platform Engineering",
+                    slack_handle="@alice-chen",
+                    max_concurrent_reviews=5,
+                ),
+                dict(
+                    name="Bob Martinez",
+                    email="bob.martinez@example.com",
+                    expertise=["python", "postgresql", "redis", "fastapi"],
+                    department="Backend Engineering",
+                    slack_handle="@bob-martinez",
+                    max_concurrent_reviews=3,
+                ),
+                dict(
+                    name="Carol Johnson",
+                    email="carol.johnson@example.com",
+                    expertise=["typescript", "react", "nextjs", "graphql"],
+                    department="Frontend Engineering",
+                    slack_handle="@carol-johnson",
+                    max_concurrent_reviews=3,
+                ),
+                dict(
+                    name="David Kim",
+                    email="david.kim@example.com",
+                    expertise=["prometheus", "grafana", "alerting", "sre"],
+                    department="SRE",
+                    slack_handle="@david-kim",
+                    max_concurrent_reviews=4,
+                ),
+            ]
+
+            engineers = [Engineer(**d) for d in engineers_data]
+            for e in engineers:
+                db.add(e)
+
+            # flush to get DB-generated UUIDs while still in the same transaction
+            await db.flush()
+
+            schedules = [
+                # General escalation chain (covers all services)
+                OnCallSchedule(
+                    engineer_id=engineers[0].id,
+                    service=None, team=None,
+                    start_time=now, end_time=week_end,
+                    priority=OnCallPriority.PRIMARY,
+                    schedule_name="Week Rotation - General",
+                    is_active=True,
+                ),
+                OnCallSchedule(
+                    engineer_id=engineers[1].id,
+                    service=None, team=None,
+                    start_time=now, end_time=week_end,
+                    priority=OnCallPriority.SECONDARY,
+                    schedule_name="Week Rotation - General",
+                    is_active=True,
+                ),
+                OnCallSchedule(
+                    engineer_id=engineers[3].id,
+                    service=None, team=None,
+                    start_time=now, end_time=week_end,
+                    priority=OnCallPriority.TERTIARY,
+                    schedule_name="Week Rotation - General",
+                    is_active=True,
+                ),
+                # payment-service gets its own primary (SRE lead)
+                OnCallSchedule(
+                    engineer_id=engineers[3].id,
+                    service="payment-service", team="sre",
+                    start_time=now, end_time=week_end,
+                    priority=OnCallPriority.PRIMARY,
+                    schedule_name="Week Rotation - Payment SRE",
+                    is_active=True,
+                ),
+            ]
+
+            for s in schedules:
+                db.add(s)
+
+            await db.commit()
+            logger.info(
+                f"Seeded {len(engineers)} engineers and {len(schedules)} on-call schedules"
+            )
+
+    except Exception as e:
+        logger.warning(f"Failed to seed engineers (non-fatal): {str(e)}", exc_info=True)
+
+
 async def _manage_demo_incidents() -> None:
     """
     Manage static demo incidents on startup.
@@ -251,8 +368,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Auto-create and manage demo incidents in development mode
     # This creates STATIC incidents on startup for immediate demo
-    # AI-generated incidents will appear over time (every 30-60 min)
+    # AI-generated incidents will appear over time (every 5 min via Celery Beat)
     if settings.environment == "development":
+        logger.info("Development mode: Seeding engineers and on-call schedules...")
+        await _seed_engineers()
         logger.info("Development mode: Managing static demo incidents...")
         await _manage_demo_incidents()
 
@@ -370,6 +489,7 @@ from app.api.v1 import (  # noqa: E402
     notifications,
     analytics,
     postmortems,
+    demo_metrics,
 )
 from app.api.v1.admin import engineers, reviews  # noqa: E402
 from app.api.dependencies import verify_api_key  # noqa: E402
@@ -457,6 +577,9 @@ app.include_router(
     tags=["Postmortems & Timeline"],
     dependencies=[Depends(verify_api_key)],
 )
+
+# Demo metrics — no auth, no /api/v1 prefix (Prometheus scrapes this directly)
+app.include_router(demo_metrics.router, tags=["Demo Metrics"])
 
 
 # Global exception handler

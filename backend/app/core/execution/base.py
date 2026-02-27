@@ -8,7 +8,7 @@ Senior Engineering Note:
 - Safety validation before execution
 """
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
@@ -32,7 +32,7 @@ class ExecutionResult(BaseModel):
     status: ExecutionStatus
     message: str = Field(..., description="Human-readable result message")
     details: dict[str, Any] = Field(default_factory=dict, description="Execution details")
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     dry_run: bool = False
@@ -112,7 +112,7 @@ class ActionExecutor(ABC):
         error: Optional[str] = None,
     ) -> ExecutionResult:
         """Helper to create execution result with timing."""
-        completed_at = datetime.utcnow()
+        completed_at = datetime.now(timezone.utc)
         duration = (completed_at - started_at).total_seconds()
 
         return ExecutionResult(

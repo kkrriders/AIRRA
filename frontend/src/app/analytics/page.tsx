@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 export default function AnalyticsPage() {
   const { data: insights, isLoading: isLoadingInsights, refetch: refetchInsights } = useQuery({
     queryKey: ["insights"],
-    queryFn: () => api.getInsights(30),
+    queryFn: () => api.getInsights({ days: 30 }),
   });
 
   const { data: patternsData, isLoading: isLoadingPatterns } = useQuery({

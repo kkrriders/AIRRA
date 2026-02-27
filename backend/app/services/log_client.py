@@ -17,7 +17,7 @@ Senior Engineering Note:
 """
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -227,7 +227,7 @@ class LogClient:
         Returns:
             Tuple of (has_spike, error_logs)
         """
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(minutes=lookback_minutes)
 
         # Query error logs

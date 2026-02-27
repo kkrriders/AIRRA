@@ -11,7 +11,7 @@ Senior Engineering Note:
 """
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
@@ -101,7 +101,7 @@ class BlastRadiusCalculator:
         logger.info(f"Calculating blast radius for {service_name}")
 
         if incident_start_time is None:
-            incident_start_time = datetime.utcnow()
+            incident_start_time = datetime.now(timezone.utc)
 
         # Get dependency information
         dep_graph = get_dependency_graph()
@@ -147,7 +147,7 @@ class BlastRadiusCalculator:
             estimated_users_impacted=users_impacted,
             revenue_impact_per_hour=revenue_impact,
             urgency_multiplier=urgency_multiplier,
-            assessment_timestamp=datetime.utcnow(),
+            assessment_timestamp=datetime.now(timezone.utc),
             details={
                 "service": service_name,
                 "tier": service_info.tier if service_info else "unknown",

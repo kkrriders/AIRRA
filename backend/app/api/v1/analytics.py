@@ -19,7 +19,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -197,7 +197,7 @@ async def get_analytics_summary(
         return IncidentAnalytics(**cached_result)
 
     # Calculate time window
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # OPTIMIZED: Use SQL aggregations instead of loading all incidents into memory
 
@@ -385,7 +385,7 @@ async def get_analytics_summary(
     # Build trends list with zero-filled days (for days with no incidents)
     trends = []
     for day_offset in range(days - 1, -1, -1):
-        day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=day_offset)
+        day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=day_offset)
         date_str = day_start.strftime('%Y-%m-%d')
 
         day_data = trends_map.get(date_str, {'count': 0, 'critical': 0, 'high': 0, 'medium': 0, 'low': 0})
@@ -444,7 +444,7 @@ async def get_service_analytics(
     if cached_result:
         return ServiceReliability(**cached_result)
 
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
 
     # OPTIMIZED: Use SQL aggregations instead of loading all incidents
     stats_stmt = select(

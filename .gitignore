@@ -104,3 +104,6 @@ tmp/
 temp/
 *.tmp
 /*.claude
+
+# Claude Code
+.claude/

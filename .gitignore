@@ -103,3 +103,4 @@ monitoring/grafana/data/
 tmp/
 temp/
 *.tmp
+/*.claude

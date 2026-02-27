@@ -14,7 +14,7 @@ from app.config import settings
 
 # Named constants for Beat schedule intervals (N5)
 ANOMALY_CHECK_INTERVAL_SECONDS: float = 60.0      # every minute
-AI_GENERATOR_INTERVAL_SECONDS: float = 5 * 60.0   # every 5 minutes
+AI_GENERATOR_INTERVAL_SECONDS: float = 30 * 60.0  # every 30 minutes (free-tier safe)
 
 celery_app = Celery(
     "airra",

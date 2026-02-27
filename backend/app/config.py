@@ -67,7 +67,15 @@ class Settings(BaseSettings):
     openrouter_api_key: SecretStr = Field(default="", description="OpenRouter API key")
     llm_model: str = Field(
         default="claude-3-5-sonnet-20241022",
-        description="LLM model identifier"
+        description="LLM model for reasoning tasks (hypothesis analysis, structured output)"
+    )
+    llm_generator_model: str = Field(
+        default="llama-3.1-8b-instant",
+        description=(
+            "LLM model for creative generation tasks (AI incident generator). "
+            "Defaults to llama-3.1-8b-instant which is on Groq's free tier. "
+            "Override via AIRRA_LLM_GENERATOR_MODEL."
+        ),
     )
     llm_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     llm_max_tokens: int = Field(default=4096, ge=100, le=8192)

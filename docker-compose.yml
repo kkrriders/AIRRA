@@ -11,7 +11,8 @@ x-backend-env: &backend-env
   AIRRA_LOG_LEVEL: INFO
   AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
   AIRRA_LLM_PROVIDER: groq
-  AIRRA_LLM_MODEL: llama-3.3-70b-versatile
+  AIRRA_LLM_MODEL: llama-3.3-70b-versatile        # reasoning tasks (analysis, hypotheses)
+  AIRRA_LLM_GENERATOR_MODEL: llama-3.1-8b-instant # creative tasks (AI incident gen) — Groq free tier
   # Groq API key (uses OPENAI_API_KEY for compatibility)
   AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
 

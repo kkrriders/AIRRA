@@ -9,7 +9,6 @@ Coordinates:
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Optional, Union
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +19,6 @@ from app.api.v1.quick_incident import (
 )
 from app.core.simulation.metric_injector import get_metric_injector
 from app.core.simulation.scenario_definitions import (
-    IncidentScenario,
     get_scenario,
 )
 
@@ -34,23 +32,23 @@ class SimulationResult:
         self,
         simulation_id: str,
         scenario_id: str,
-        incident_id: Optional[Union[UUID, str]] = None,
+        incident_id: UUID | str | None = None,
         status: str = "running",
-        started_at: Optional[datetime] = None,
-        error: Optional[str] = None,
+        started_at: datetime | None = None,
+        error: str | None = None,
     ):
         self.simulation_id = simulation_id
         self.scenario_id = scenario_id
         self.incident_id = str(incident_id) if incident_id else None
         self.status = status
         self.started_at = started_at or datetime.now(timezone.utc)
-        self.completed_at: Optional[datetime] = None
+        self.completed_at: datetime | None = None
         self.error = error
         self.hypotheses_count = 0
         self.actions_count = 0
         self.metrics_injected = False
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to dictionary for API response."""
         return {
             "simulation_id": self.simulation_id,
@@ -93,7 +91,7 @@ class ScenarioRunner:
         """
         self.mock_service_url = mock_service_url
         self.metric_injector = get_metric_injector(mock_service_url)
-        self._active_simulations: Dict[str, SimulationResult] = {}
+        self._active_simulations: dict[str, SimulationResult] = {}
 
     async def run_scenario(
         self,
@@ -226,7 +224,7 @@ class ScenarioRunner:
             result.mark_failed(str(e))
             raise
 
-    async def stop_scenario(self, simulation_id: str) -> Dict:
+    async def stop_scenario(self, simulation_id: str) -> dict:
         """
         Stop a running scenario simulation.
 
@@ -268,7 +266,7 @@ class ScenarioRunner:
             result.mark_failed(f"Stop failed: {str(e)}")
             raise
 
-    def get_simulation(self, simulation_id: str) -> Optional[SimulationResult]:
+    def get_simulation(self, simulation_id: str) -> SimulationResult | None:
         """
         Get simulation result by ID.
 
@@ -315,7 +313,7 @@ class ScenarioRunner:
 # Singleton Instance
 # ============================================
 
-_runner_instance: Optional[ScenarioRunner] = None
+_runner_instance: ScenarioRunner | None = None
 
 
 def get_scenario_runner(mock_service_url: str = "http://localhost:5001") -> ScenarioRunner:

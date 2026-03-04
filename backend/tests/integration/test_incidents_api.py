@@ -1,6 +1,4 @@
 """Integration tests for Incidents API endpoints."""
-import pytest
-from datetime import datetime
 
 
 class TestIncidentsAPI:

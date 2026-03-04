@@ -6,10 +6,9 @@ This module provides fixtures for testing FastAPI endpoints with:
 - Test database with realistic data
 - HTTP client with proper dependency injection
 """
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator
-from unittest.mock import AsyncMock, Mock, MagicMock, patch
-from uuid import UUID
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -18,8 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.reasoning.hypothesis_generator import (
     Evidence,
-    HypothesisItem,
     HypothesesResponse,
+    HypothesisItem,
 )
 from app.database import get_db
 from app.main import app
@@ -27,8 +26,6 @@ from app.models.action import Action, ActionStatus
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.services.llm_client import LLMResponse
-from app.services.prometheus_client import MetricDataPoint, MetricResult
-
 
 # ============================================================================
 # API Test Client with Dependency Overrides
@@ -62,8 +59,8 @@ async def api_client(
     async def override_get_db():
         yield test_db
 
-    from app.api.rate_limit import llm_rate_limit
     from app.api.dependencies import verify_api_key
+    from app.api.rate_limit import llm_rate_limit
 
     async def override_rate_limit():
         pass
@@ -82,9 +79,9 @@ async def api_client(
     with patch("app.worker.celery_app.celery_app.send_task", return_value=MagicMock(id="test-task-id")), \
          patch("app.api.v1.quick_incident.get_llm_client", return_value=mock_llm_client), \
          patch("app.api.v1.quick_incident.get_prometheus_client", return_value=mock_prometheus_client):
-        
+
         async with AsyncClient(
-            app=app, 
+            app=app,
             base_url="http://test",
             headers={"X-API-Key": "dev-test-key-12345"}
         ) as client:

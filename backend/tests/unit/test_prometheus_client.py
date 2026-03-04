@@ -1,9 +1,10 @@
 """Unit tests for Prometheus client."""
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime, timedelta
+from unittest.mock import Mock, patch
 
-from app.services.prometheus_client import PrometheusClient, MetricResult, MetricDataPoint
+import pytest
+
+from app.services.prometheus_client import MetricDataPoint, MetricResult, PrometheusClient
 
 
 class TestPrometheusClient:

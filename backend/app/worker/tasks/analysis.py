@@ -6,7 +6,6 @@ instead of blocking the HTTP response. The endpoint now returns 202 immediately
 and enqueues this task.
 """
 import asyncio
-import logging
 from uuid import UUID
 
 from celery import Task

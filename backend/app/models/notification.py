@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Enum as SQLEnum,
+)
+from sqlalchemy import (
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
-    Integer,
-    Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -76,7 +78,7 @@ class Notification(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    incident_id: Mapped[Optional[UUID]] = mapped_column(
+    incident_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("incidents.id", ondelete="CASCADE"),
         nullable=True,
         index=True,
@@ -120,36 +122,36 @@ class Notification(Base, TimestampMixin):
         nullable=False,
         comment="Email address, Slack user ID, phone number, etc.",
     )
-    sent_at: Mapped[Optional[datetime]] = mapped_column(
+    sent_at: Mapped[datetime | None] = mapped_column(
         nullable=True,
         index=True,
         comment="When notification was sent",
     )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(
+    delivered_at: Mapped[datetime | None] = mapped_column(
         nullable=True,
         comment="When notification was confirmed delivered",
     )
 
     # Acknowledgement tracking
-    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
         nullable=True,
         index=True,
         comment="When engineer acknowledged the notification",
     )
-    acknowledgement_token: Mapped[Optional[str]] = mapped_column(
+    acknowledgement_token: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         unique=True,
         index=True,
         comment="Secure token for tracking email link clicks",
     )
-    token_expires_at: Mapped[Optional[datetime]] = mapped_column(
+    token_expires_at: Mapped[datetime | None] = mapped_column(
         nullable=True,
         comment="When the acknowledgement token expires",
     )
 
     # Response time SLA tracking
-    response_time_seconds: Mapped[Optional[int]] = mapped_column(
+    response_time_seconds: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Time from sent to acknowledged in seconds",
@@ -160,7 +162,7 @@ class Notification(Base, TimestampMixin):
         default=300,  # 5 minutes default
         comment="Target response time SLA",
     )
-    sla_met: Mapped[Optional[bool]] = mapped_column(
+    sla_met: Mapped[bool | None] = mapped_column(
         nullable=True,
         index=True,
         comment="Whether SLA was met (NULL if not yet acknowledged)",
@@ -179,7 +181,7 @@ class Notification(Base, TimestampMixin):
         default=3,
         comment="Maximum retry attempts",
     )
-    last_error: Mapped[Optional[str]] = mapped_column(
+    last_error: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Last delivery error message",
@@ -192,12 +194,12 @@ class Notification(Base, TimestampMixin):
         index=True,
         comment="Whether this notification was escalated",
     )
-    escalated_to_engineer_id: Mapped[Optional[UUID]] = mapped_column(
+    escalated_to_engineer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("engineers.id", ondelete="SET NULL"),
         nullable=True,
         comment="Engineer this was escalated to (if escalated)",
     )
-    escalated_at: Mapped[Optional[datetime]] = mapped_column(
+    escalated_at: Mapped[datetime | None] = mapped_column(
         nullable=True,
         comment="When escalation occurred",
     )
@@ -236,14 +238,14 @@ class Notification(Base, TimestampMixin):
             f"priority={self.priority.value})>"
         )
 
-    def calculate_response_time(self) -> Optional[int]:
+    def calculate_response_time(self) -> int | None:
         """Calculate response time in seconds."""
         if self.sent_at and self.acknowledged_at:
             delta = self.acknowledged_at - self.sent_at
             return int(delta.total_seconds())
         return None
 
-    def check_sla(self) -> Optional[bool]:
+    def check_sla(self) -> bool | None:
         """Check if SLA was met."""
         response_time = self.calculate_response_time()
         if response_time is not None:

@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -17,13 +16,13 @@ class IncidentOutcome(BaseModel):
     """Captured outcome of an incident resolution."""
 
     incident_id: UUID
-    hypothesis_id: Optional[UUID] = None
+    hypothesis_id: UUID | None = None
     hypothesis_correct: bool = False
-    action_id: Optional[UUID] = None
+    action_id: UUID | None = None
     action_effective: bool = False
-    time_to_resolution_minutes: Optional[int] = None
+    time_to_resolution_minutes: int | None = None
     human_override: bool = False
-    override_reason: Optional[str] = None
+    override_reason: str | None = None
     resolution_notes: str = ""
 
 
@@ -163,7 +162,7 @@ class LearningEngine:
         # partial-commits hypothesis and action changes without the pattern update,
         # violating the "single atomic transaction" contract (SUG-2 fix).
         from sqlalchemy import select
-        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         from app.models.incident_pattern import IncidentPattern
 
         pattern_id = f"{incident.affected_service}:{hypothesis.category}"
@@ -247,7 +246,7 @@ class LearningEngine:
                 success_rate=new_success_rate,
             )
 
-    async def get_pattern(self, service: str, category: str) -> Optional[PatternSignature]:
+    async def get_pattern(self, service: str, category: str) -> PatternSignature | None:
         """Get pattern for a service and category. L1: in-memory, L2: DB."""
         pattern_id = f"{service}:{category}"
 
@@ -258,6 +257,7 @@ class LearningEngine:
         # L2: DB lookup (e.g. first request after restart before load_patterns_from_db runs)
         try:
             from sqlalchemy import select
+
             from app.models.incident_pattern import IncidentPattern
 
             async with get_db_context() as db:
@@ -300,6 +300,7 @@ class LearningEngine:
         """
         try:
             from sqlalchemy import select
+
             from app.models.incident_pattern import IncidentPattern
 
             async with get_db_context() as db:
@@ -440,7 +441,7 @@ class LearningEngine:
 
 
 # Global learning engine instance
-_learning_engine: Optional[LearningEngine] = None
+_learning_engine: LearningEngine | None = None
 
 
 def get_learning_engine() -> LearningEngine:

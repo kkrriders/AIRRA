@@ -8,14 +8,11 @@ This module provides:
 - Test data factories (incidents, actions, hypotheses)
 - FastAPI test client with dependency overrides
 """
-import asyncio
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
-from typing import AsyncGenerator
-from unittest.mock import AsyncMock, Mock
-from uuid import uuid4
+from unittest.mock import AsyncMock
 
 import pytest
-from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
@@ -26,12 +23,11 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.config import settings
 from app.core.perception.anomaly_detector import AnomalyDetection
 from app.core.reasoning.hypothesis_generator import (
     Evidence,
-    HypothesisItem,
     HypothesesResponse,
+    HypothesisItem,
 )
 from app.database import get_db
 from app.main import app
@@ -39,7 +35,6 @@ from app.models import Base
 from app.models.action import Action, ActionStatus
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
-from app.schemas.incident import IncidentCreate
 from app.services.llm_client import LLMResponse
 from app.services.prometheus_client import MetricDataPoint, MetricResult
 
@@ -103,7 +98,7 @@ async def test_db(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None
     import app.database
     original_maker = app.database.async_session_maker
     app.database.async_session_maker = test_session_maker
-    
+
     try:
         async with test_session_maker() as session:
             yield session

@@ -14,7 +14,6 @@ Senior Engineering Note:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select
@@ -44,9 +43,9 @@ class AssignmentResult:
     def __init__(
         self,
         success: bool,
-        engineer: Optional[Engineer] = None,
-        strategy: Optional[str] = None,
-        reason: Optional[str] = None,
+        engineer: Engineer | None = None,
+        strategy: str | None = None,
+        reason: str | None = None,
     ):
         self.success = success
         self.engineer = engineer

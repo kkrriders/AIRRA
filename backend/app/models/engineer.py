@@ -7,10 +7,11 @@ Senior Engineering Note:
 - Relationship with review records for history tracking
 """
 import enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Integer, String, Index, JSON, Enum as SQLEnum
+from sqlalchemy import JSON, Boolean, Index, Integer, String
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, TimestampMixin
@@ -58,7 +59,7 @@ class Engineer(Base, TimestampMixin):
         default=list,
         comment="Areas of expertise (e.g., ['kubernetes', 'databases', 'networking'])",
     )
-    department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Availability tracking
     status: Mapped[EngineerStatus] = mapped_column(
@@ -94,14 +95,14 @@ class Engineer(Base, TimestampMixin):
         default=0,
         comment="Lifetime review count",
     )
-    average_review_time_minutes: Mapped[Optional[float]] = mapped_column(
+    average_review_time_minutes: Mapped[float | None] = mapped_column(
         nullable=True,
         comment="Average time to complete a review",
     )
 
     # Contact and additional info
-    slack_handle: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    slack_handle: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     additional_info: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,

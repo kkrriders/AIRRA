@@ -10,7 +10,7 @@ Senior Engineering Note:
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -33,10 +33,10 @@ class ExecutionResult(BaseModel):
     message: str = Field(..., description="Human-readable result message")
     details: dict[str, Any] = Field(default_factory=dict, description="Execution details")
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    completed_at: datetime | None = None
+    duration_seconds: float | None = None
     dry_run: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ActionExecutor(ABC):
@@ -72,7 +72,7 @@ class ActionExecutor(ABC):
         self,
         target: str,
         parameters: dict[str, Any],
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Validate that the action can be safely executed.
 
@@ -108,8 +108,8 @@ class ActionExecutor(ABC):
         status: ExecutionStatus,
         message: str,
         started_at: datetime,
-        details: Optional[dict] = None,
-        error: Optional[str] = None,
+        details: dict | None = None,
+        error: str | None = None,
     ) -> ExecutionResult:
         """Helper to create execution result with timing."""
         completed_at = datetime.now(timezone.utc)

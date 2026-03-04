@@ -6,7 +6,6 @@ incidents. The mock service exposes Prometheus endpoints with these metrics.
 """
 import asyncio
 import logging
-from typing import Dict, Optional
 from datetime import datetime, timezone
 
 import httpx
@@ -34,9 +33,9 @@ class MetricInjector:
             mock_service_url: Base URL of the mock service
         """
         self.mock_service_url = mock_service_url
-        self._http_client: Optional[httpx.AsyncClient] = None
-        self._auto_stop_task: Optional[asyncio.Task] = None
-        self._active_scenario_id: Optional[str] = None
+        self._http_client: httpx.AsyncClient | None = None
+        self._auto_stop_task: asyncio.Task | None = None
+        self._active_scenario_id: str | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
@@ -48,7 +47,7 @@ class MetricInjector:
         self,
         scenario: IncidentScenario,
         auto_stop: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """
         Start injecting metrics for a scenario.
 
@@ -116,7 +115,7 @@ class MetricInjector:
                 f"Please ensure it's running: python mock-services/payment-service.py"
             ) from e
 
-    async def stop_injection(self, scenario_id: Optional[str] = None) -> Dict:
+    async def stop_injection(self, scenario_id: str | None = None) -> dict:
         """
         Stop metric injection and return to normal.
 
@@ -212,7 +211,7 @@ class MetricInjector:
         except Exception as e:
             logger.error(f"Auto-stop failed: {str(e)}", exc_info=True)
 
-    def _build_metrics_payload(self, metrics: list[MetricPattern]) -> Dict:
+    def _build_metrics_payload(self, metrics: list[MetricPattern]) -> dict:
         """
         Convert scenario metrics to mock service format.
 
@@ -249,7 +248,7 @@ class MetricInjector:
 # Singleton Instance
 # ============================================
 
-_injector_instance: Optional[MetricInjector] = None
+_injector_instance: MetricInjector | None = None
 
 
 def get_metric_injector(mock_service_url: str = "http://localhost:5001") -> MetricInjector:

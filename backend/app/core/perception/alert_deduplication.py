@@ -14,7 +14,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ class Alert:
     timestamp: datetime
     labels: dict[str, str] = field(default_factory=dict)
     annotations: dict[str, str] = field(default_factory=dict)
-    fingerprint: Optional[str] = None  # For deduplication
+    fingerprint: str | None = None  # For deduplication
 
     def __post_init__(self):
         """Calculate fingerprint if not provided."""
@@ -90,7 +89,7 @@ class AlertDeduplicator:
     def __init__(
         self,
         deduplication_window_seconds: int = 300,  # 5 minutes
-        severity_normalization: Optional[dict[str, AlertSeverity]] = None,
+        severity_normalization: dict[str, AlertSeverity] | None = None,
     ):
         """
         Initialize alert deduplicator.
@@ -128,7 +127,7 @@ class AlertDeduplicator:
     def deduplicate(
         self,
         alerts: list[Alert],
-        max_age_seconds: Optional[int] = None,
+        max_age_seconds: int | None = None,
     ) -> list[DedupedAlert]:
         """
         Deduplicate alerts by fingerprint and time window.

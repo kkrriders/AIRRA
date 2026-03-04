@@ -4,7 +4,7 @@ Shared API dependencies for authentication and authorization.
 import logging
 import secrets
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.config import settings

@@ -8,10 +8,11 @@ Senior Engineering Note:
 """
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Enum as SQLEnum, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, TimestampMixin
@@ -86,7 +87,7 @@ class Action(Base, TimestampMixin):
 
     # Target
     target_service: Mapped[str] = mapped_column(String(255), nullable=False)
-    target_resource: Mapped[Optional[str]] = mapped_column(
+    target_resource: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Specific resource ID (pod name, node ID, etc.)",
@@ -119,19 +120,19 @@ class Action(Base, TimestampMixin):
 
     # Approval tracking
     requires_approval: Mapped[bool] = mapped_column(nullable=False, default=True)
-    approved_by: Mapped[Optional[str]] = mapped_column(
+    approved_by: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="User who approved (email or ID)",
     )
-    approved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    rejected_by: Mapped[Optional[str]] = mapped_column(
+    approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    rejected_by: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="User who rejected (email or ID)",
     )
-    rejected_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Execution
     execution_mode: Mapped[str] = mapped_column(
@@ -140,9 +141,9 @@ class Action(Base, TimestampMixin):
         default="dry_run",
         comment="dry_run or live",
     )
-    executed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    execution_duration_seconds: Mapped[Optional[int]] = mapped_column(nullable=True)
-    execution_result: Mapped[Optional[dict]] = mapped_column(
+    executed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    execution_duration_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    execution_result: Mapped[dict | None] = mapped_column(
         JSON,
         nullable=True,
         comment="Detailed execution results or error information",
@@ -157,7 +158,7 @@ class Action(Base, TimestampMixin):
     )
 
     # Rollback
-    rollback_action_id: Mapped[Optional[UUID]] = mapped_column(
+    rollback_action_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("actions.id"),
         nullable=True,
         comment="ID of the action that rolled back this action",

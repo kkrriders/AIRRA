@@ -19,13 +19,12 @@ from app.api.dependencies import verify_api_key
 from app.database import get_db
 from app.models.notification import Notification, NotificationStatus
 from app.schemas.notification import (
-    NotificationCreate,
-    NotificationUpdate,
-    NotificationResponse,
     NotificationAcknowledge,
+    NotificationListResponse,
+    NotificationResponse,
     NotificationSendRequest,
     NotificationStatsResponse,
-    NotificationListResponse,
+    NotificationUpdate,
 )
 from app.services.notification_service import notification_service
 from app.services.token_service import token_service

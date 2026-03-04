@@ -13,10 +13,8 @@ import smtplib
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional
 from uuid import UUID
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,8 +24,8 @@ from app.models.incident import Incident
 from app.models.notification import (
     Notification,
     NotificationChannel,
-    NotificationStatus,
     NotificationPriority,
+    NotificationStatus,
 )
 from app.services.token_service import token_service
 
@@ -40,7 +38,6 @@ class NotificationService:
     def __init__(self):
         """Initialize notification service."""
         # SMTP configuration from settings
-        from app.config import settings
 
         self.smtp_enabled = settings.smtp_enabled
         self.smtp_host = settings.smtp_host
@@ -320,7 +317,7 @@ This is an automated notification. Do not reply to this email directly.
         """Send Slack notification via webhook."""
         try:
             # TODO: Configure Slack webhook URL in settings
-            webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+            _webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
 
             # Generate admin panel URL
             admin_url, _ = token_service.generate_admin_panel_url(
@@ -329,7 +326,7 @@ This is an automated notification. Do not reply to this email directly.
             )
 
             # Build Slack message
-            slack_message = {
+            _slack_message = {
                 "text": f"🚨 Incident Alert: {incident.title}",
                 "blocks": [
                     {

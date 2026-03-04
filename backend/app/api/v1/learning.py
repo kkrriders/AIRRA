@@ -7,7 +7,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.services.learning_engine import (
     IncidentOutcome,

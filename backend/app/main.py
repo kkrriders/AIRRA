@@ -10,15 +10,15 @@ Senior Engineering Note:
 - API versioning
 """
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI
-from prometheus_fastapi_instrumentator import Instrumentator
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from pythonjsonlogger import jsonlogger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
@@ -26,17 +26,17 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app.config import settings
-from app.database import close_db, init_db, get_db_context
+from app.database import close_db, get_db_context, init_db
 
 # Configure structured logging
 logger = logging.getLogger()
-logHandler = logging.StreamHandler()
+log_handler = logging.StreamHandler()
 formatter = jsonlogger.JsonFormatter(
     fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logHandler.setFormatter(formatter)
-logger.addHandler(logHandler)
+log_handler.setFormatter(formatter)
+logger.addHandler(log_handler)
 logger.setLevel(getattr(logging, settings.log_level))
 
 
@@ -96,9 +96,11 @@ async def _seed_engineers() -> None:
     covering the next 7 days so the on-call dashboard shows data immediately.
     """
     from datetime import datetime, timedelta, timezone
-    from sqlalchemy import select, func
+
+    from sqlalchemy import func, select
+
     from app.models.engineer import Engineer
-    from app.models.on_call_schedule import OnCallSchedule, OnCallPriority
+    from app.models.on_call_schedule import OnCallPriority, OnCallSchedule
 
     try:
         async with get_db_context() as db:
@@ -217,10 +219,11 @@ async def _manage_demo_incidents() -> None:
     and to make this block independently testable (SUG-4 fix).
     """
     from datetime import datetime, timedelta, timezone
-    from hashlib import md5
-    from sqlalchemy import select, delete
-    from app.models.incident import Incident, IncidentStatus
+
+    from sqlalchemy import delete, select
+
     from app.core.simulation.scenario_runner import get_scenario_runner
+    from app.models.incident import Incident, IncidentStatus
 
     try:
         runner = get_scenario_runner()
@@ -483,21 +486,21 @@ async def root():
 
 
 # Import and include API routers
+from app.api.dependencies import verify_api_key  # noqa: E402
 from app.api.v1 import (  # noqa: E402
-    incidents,
     actions,
+    analytics,
     approvals,
+    demo_metrics,
+    incidents,
     learning,
+    notifications,
+    on_call,
+    postmortems,
     quick_incident,
     simulator,
-    on_call,
-    notifications,
-    analytics,
-    postmortems,
-    demo_metrics,
 )
 from app.api.v1.admin import engineers, reviews  # noqa: E402
-from app.api.dependencies import verify_api_key  # noqa: E402
 
 app.include_router(
     incidents.router,

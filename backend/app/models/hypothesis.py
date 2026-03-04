@@ -6,7 +6,7 @@ Senior Engineering Note:
 - Evidence stored as structured JSON
 - Confidence score for ranking and decision-making
 """
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, ForeignKey, Index, Numeric, String, Text
@@ -83,9 +83,9 @@ class Hypothesis(Base, TimestampMixin):
         nullable=False,
         comment="LLM model used for generation",
     )
-    llm_prompt_tokens: Mapped[Optional[int]] = mapped_column(nullable=True)
-    llm_completion_tokens: Mapped[Optional[int]] = mapped_column(nullable=True)
-    llm_reasoning: Mapped[Optional[str]] = mapped_column(
+    llm_prompt_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    llm_completion_tokens: Mapped[int | None] = mapped_column(nullable=True)
+    llm_reasoning: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="LLM's chain-of-thought reasoning (if available)",
@@ -97,7 +97,7 @@ class Hypothesis(Base, TimestampMixin):
         default=False,
         comment="Whether this hypothesis was confirmed correct",
     )
-    validation_feedback: Mapped[Optional[str]] = mapped_column(
+    validation_feedback: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Human feedback on hypothesis accuracy",

@@ -4,14 +4,13 @@ Unit test specific fixtures.
 This module provides fixtures for isolated unit testing of individual components
 without external dependencies.
 """
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock
+from datetime import datetime
+from unittest.mock import Mock
 
 import pytest
 
 from app.core.perception.anomaly_detector import AnomalyDetection
 from app.services.prometheus_client import MetricDataPoint, MetricResult
-
 
 # ============================================================================
 # Anomaly Detector Test Fixtures

@@ -8,7 +8,7 @@ Senior Engineering Note:
 """
 import re
 from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -16,8 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.incident import IncidentSeverity, IncidentStatus
 
 if TYPE_CHECKING:
-    from app.schemas.hypothesis import HypothesisResponse
     from app.schemas.action import ActionResponse
+    from app.schemas.hypothesis import HypothesisResponse
 
 
 class IncidentBase(BaseModel):
@@ -47,11 +47,11 @@ class IncidentUpdate(BaseModel):
     enforce the PENDING_APPROVAL → APPROVED → EXECUTING → RESOLVED safety gate.
     """
 
-    title: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = Field(None, min_length=1)
-    severity: Optional[IncidentSeverity] = None
-    resolved_at: Optional[datetime] = None
-    resolution_time_seconds: Optional[int] = Field(None, ge=0)
+    title: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = Field(None, min_length=1)
+    severity: IncidentSeverity | None = None
+    resolved_at: datetime | None = None
+    resolution_time_seconds: int | None = Field(None, ge=0)
 
 
 class IncidentResponse(IncidentBase):
@@ -63,10 +63,10 @@ class IncidentResponse(IncidentBase):
     status: IncidentStatus
     detected_at: datetime
     detection_source: str
-    resolved_at: Optional[datetime] = None
-    resolution_time_seconds: Optional[int] = None
-    resolution_summary: Optional[str] = None
-    assigned_engineer_id: Optional[UUID] = None
+    resolved_at: datetime | None = None
+    resolution_time_seconds: int | None = None
+    resolution_summary: str | None = None
+    assigned_engineer_id: UUID | None = None
     metrics_snapshot: dict
     context: dict
     created_at: datetime
@@ -93,12 +93,12 @@ class IncidentListResponse(BaseModel):
 class IncidentFilter(BaseModel):
     """Schema for filtering incidents with strict validation."""
 
-    status: Optional[IncidentStatus] = None
-    service: Optional[str] = Field(None, min_length=1, max_length=255)
+    status: IncidentStatus | None = None
+    service: str | None = Field(None, min_length=1, max_length=255)
 
     @field_validator("service")
     @classmethod
-    def validate_service_name(cls, v: Optional[str]) -> Optional[str]:
+    def validate_service_name(cls, v: str | None) -> str | None:
         """Validate service name contains only safe characters."""
         if v is None:
             return v
@@ -111,7 +111,7 @@ class IncidentFilter(BaseModel):
 
 
 # Rebuild model to resolve forward references
-from app.schemas.hypothesis import HypothesisResponse  # noqa: E402
 from app.schemas.action import ActionResponse  # noqa: E402
+from app.schemas.hypothesis import HypothesisResponse  # noqa: E402
 
 IncidentWithRelations.model_rebuild()

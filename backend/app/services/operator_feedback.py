@@ -20,7 +20,6 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 from app.models.action import ActionType
 
@@ -53,20 +52,20 @@ class OperatorFeedback:
     feedback_text: str  # Human explanation
 
     # What AIRRA decided
-    airra_hypothesis_category: Optional[str] = None
-    airra_hypothesis_description: Optional[str] = None
-    airra_confidence: Optional[float] = None
-    airra_action_type: Optional[ActionType] = None
+    airra_hypothesis_category: str | None = None
+    airra_hypothesis_description: str | None = None
+    airra_confidence: float | None = None
+    airra_action_type: ActionType | None = None
 
     # Operator corrections
-    correct_hypothesis_category: Optional[str] = None
-    correct_hypothesis_description: Optional[str] = None
-    correct_action_type: Optional[ActionType] = None
+    correct_hypothesis_category: str | None = None
+    correct_hypothesis_description: str | None = None
+    correct_action_type: ActionType | None = None
 
     # Outcome
     incident_resolved: bool = False
-    resolution_method: Optional[str] = None  # "airra_action", "manual", "self_healed"
-    time_to_resolution_seconds: Optional[float] = None
+    resolution_method: str | None = None  # "airra_action", "manual", "self_healed"
+    time_to_resolution_seconds: float | None = None
 
     # Tags for analysis
     tags: list[str] = None
@@ -161,7 +160,7 @@ class OperatorFeedbackCollector:
         feedback_records = []
 
         try:
-            with open(self.storage_path, "r") as f:
+            with open(self.storage_path) as f:
                 for line in f:
                     if not line.strip():
                         continue
@@ -445,7 +444,7 @@ class OperatorFeedbackCollector:
 
 
 # Global instance
-_operator_feedback_collector: Optional[OperatorFeedbackCollector] = None
+_operator_feedback_collector: OperatorFeedbackCollector | None = None
 
 
 def get_operator_feedback_collector() -> OperatorFeedbackCollector:

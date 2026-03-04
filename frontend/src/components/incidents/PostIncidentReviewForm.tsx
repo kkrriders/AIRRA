@@ -10,7 +10,7 @@ interface ActionItem {
   id: string;
   description: string;
   owner: string;
-  due_date: string;
+  due_date?: string;
   priority: "low" | "medium" | "high" | "critical";
   status: "open" | "in_progress" | "completed" | "cancelled";
 }
@@ -38,10 +38,10 @@ interface PostIncidentReviewData {
 interface InitialData {
   actual_root_cause?: string;
   contributing_factors?: string[];
-  detection_delay_reason?: string;
+  detection_delay_reason?: string | null;
   duration_minutes?: number;
-  users_affected?: number;
-  revenue_impact_usd?: number;
+  users_affected?: number | null;
+  revenue_impact_usd?: number | null;
   what_went_well?: string[];
   what_went_wrong?: string[];
   lessons_learned?: string[];
@@ -49,9 +49,9 @@ interface InitialData {
   prevention_measures?: string[];
   detection_improvements?: string[];
   response_improvements?: string[];
-  ai_hypothesis_correct?: boolean;
-  ai_evaluation_notes?: string;
-  additional_notes?: string;
+  ai_hypothesis_correct?: boolean | null;
+  ai_evaluation_notes?: string | null;
+  additional_notes?: string | null;
 }
 
 interface PostIncidentReviewFormProps {
@@ -134,7 +134,7 @@ export default function PostIncidentReviewForm({
   );
 
   const [aiCorrect, setAiCorrect] = useState<boolean | undefined>(
-    initialData?.ai_hypothesis_correct
+    initialData?.ai_hypothesis_correct ?? undefined
   );
   const [aiNotes, setAiNotes] = useState(initialData?.ai_evaluation_notes ?? "");
   const [additionalNotes, setAdditionalNotes] = useState(

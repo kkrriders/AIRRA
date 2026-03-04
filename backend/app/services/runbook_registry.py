@@ -11,8 +11,6 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -31,7 +29,7 @@ class RunbookAction:
     risk_level: RiskLevel
     parameters_template: dict  # Template for action parameters
     prerequisites: list[str] = None  # Conditions that must be met
-    max_auto_executions_per_day: Optional[int] = None  # Rate limiting
+    max_auto_executions_per_day: int | None = None  # Rate limiting
 
     def __post_init__(self):
         if self.prerequisites is None:
@@ -46,7 +44,7 @@ class Runbook:
     name: str
     symptom: str  # What problem this runbook addresses
     category: str  # memory_leak, cpu_spike, etc.
-    service: Optional[str] = None  # Specific service (None = any service)
+    service: str | None = None  # Specific service (None = any service)
     allowed_actions: list[RunbookAction] = None  # Actions that can be taken
     diagnostic_queries: dict[str, str] = None  # Prometheus queries for diagnostics
     escalation_criteria: list[str] = None  # When to escalate to human
@@ -68,7 +66,7 @@ class RunbookRegistry:
     LLM = reasoning assistant, NOT action inventor.
     """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         """
         Initialize runbook registry.
 
@@ -110,7 +108,7 @@ class RunbookRegistry:
             return
 
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path) as f:
                 if self.config_path.endswith('.json'):
                     config = json.load(f)
                 else:
@@ -297,8 +295,8 @@ class RunbookRegistry:
     def get_runbook_for_category(
         self,
         category: str,
-        service: Optional[str] = None,
-    ) -> Optional[Runbook]:
+        service: str | None = None,
+    ) -> Runbook | None:
         """
         Get runbook for a specific category and service.
 
@@ -326,7 +324,7 @@ class RunbookRegistry:
     def get_allowed_actions(
         self,
         category: str,
-        service: Optional[str] = None,
+        service: str | None = None,
     ) -> list[RunbookAction]:
         """
         Get allowed actions for a category/service.
@@ -345,7 +343,7 @@ class RunbookRegistry:
         self,
         action_type: ActionType,
         category: str,
-        service: Optional[str] = None,
+        service: str | None = None,
     ) -> bool:
         """
         Check if an action is allowed for a category/service.
@@ -367,7 +365,7 @@ class RunbookRegistry:
 
 
 # Global instance
-_runbook_registry: Optional[RunbookRegistry] = None
+_runbook_registry: RunbookRegistry | None = None
 
 
 def get_runbook_registry() -> RunbookRegistry:

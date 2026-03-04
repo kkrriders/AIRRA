@@ -1,5 +1,4 @@
 """Integration tests for Approvals API endpoints."""
-import pytest
 
 
 class TestApprovalsAPI:

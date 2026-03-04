@@ -13,7 +13,6 @@ Senior Engineering Note:
 import logging
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -83,7 +82,7 @@ class SignalCorrelator:
     async def correlate_signals(
         self,
         signals: list[Signal],
-        service_filter: Optional[str] = None,
+        service_filter: str | None = None,
     ) -> list[CorrelatedIncident]:
         """
         Correlate signals to identify incidents.
@@ -133,7 +132,7 @@ class SignalCorrelator:
             return []
 
     def _group_by_service(
-        self, signals: list[Signal], service_filter: Optional[str]
+        self, signals: list[Signal], service_filter: str | None
     ) -> dict[str, list[Signal]]:
         """Group signals by service."""
         groups: dict[str, list[Signal]] = {}
@@ -223,7 +222,7 @@ class SignalCorrelator:
         severity_score = (max_anomaly + avg_anomaly) / 2
 
         # Generate title
-        signal_summaries = [f"{s.name} ({s.signal_type.value})" for s in signals[:3]]
+        _signal_summaries = [f"{s.name} ({s.signal_type.value})" for s in signals[:3]]
         title = f"Multiple anomalies detected in {service}"
 
         # Generate description

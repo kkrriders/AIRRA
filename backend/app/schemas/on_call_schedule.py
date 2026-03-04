@@ -7,7 +7,6 @@ Senior Engineering Note:
 - Priority level constraints
 """
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -18,13 +17,13 @@ from app.models.on_call_schedule import OnCallPriority
 class OnCallScheduleBase(BaseModel):
     """Base schema with common fields."""
 
-    service: Optional[str] = Field(
+    service: str | None = Field(
         None,
         max_length=255,
         pattern=r"^[a-zA-Z0-9_-]+$",
         description="Service name (NULL = all services)",
     )
-    team: Optional[str] = Field(
+    team: str | None = Field(
         None,
         max_length=100,
         description="Team name (NULL = all teams)",
@@ -49,22 +48,22 @@ class OnCallScheduleCreate(OnCallScheduleBase):
     """Schema for creating a new on-call schedule."""
 
     engineer_id: UUID = Field(..., description="Engineer being assigned")
-    schedule_name: Optional[str] = Field(None, max_length=255)
-    rotation_week: Optional[int] = Field(None, ge=1, le=52)
+    schedule_name: str | None = Field(None, max_length=255)
+    rotation_week: int | None = Field(None, ge=1, le=52)
     is_active: bool = Field(default=True)
 
 
 class OnCallScheduleUpdate(BaseModel):
     """Schema for updating an on-call schedule."""
 
-    service: Optional[str] = Field(None, max_length=255)
-    team: Optional[str] = Field(None, max_length=100)
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    priority: Optional[OnCallPriority] = None
-    schedule_name: Optional[str] = Field(None, max_length=255)
-    rotation_week: Optional[int] = Field(None, ge=1, le=52)
-    is_active: Optional[bool] = None
+    service: str | None = Field(None, max_length=255)
+    team: str | None = Field(None, max_length=100)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    priority: OnCallPriority | None = None
+    schedule_name: str | None = Field(None, max_length=255)
+    rotation_week: int | None = Field(None, ge=1, le=52)
+    is_active: bool | None = None
 
 
 class OnCallScheduleResponse(OnCallScheduleBase):
@@ -74,8 +73,8 @@ class OnCallScheduleResponse(OnCallScheduleBase):
 
     id: UUID
     engineer_id: UUID
-    schedule_name: Optional[str] = None
-    rotation_week: Optional[int] = None
+    schedule_name: str | None = None
+    rotation_week: int | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -92,18 +91,18 @@ class OnCallScheduleWithEngineer(OnCallScheduleResponse):
 class OnCallFindRequest(BaseModel):
     """Schema for finding who's on-call."""
 
-    service: Optional[str] = Field(
+    service: str | None = Field(
         None,
         max_length=255,
         pattern=r"^[a-zA-Z0-9_-]+$",
         description="Filter by service",
     )
-    team: Optional[str] = Field(None, max_length=100, description="Filter by team")
-    time: Optional[datetime] = Field(
+    team: str | None = Field(None, max_length=100, description="Filter by team")
+    time: datetime | None = Field(
         None,
         description="Check on-call at specific time (defaults to now)",
     )
-    priority: Optional[OnCallPriority] = Field(
+    priority: OnCallPriority | None = Field(
         None,
         description="Filter by priority level",
     )

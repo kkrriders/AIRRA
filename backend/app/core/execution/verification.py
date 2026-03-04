@@ -13,7 +13,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
 
 from app.core.execution.base import ExecutionResult, ExecutionStatus
 from app.services.prometheus_client import PrometheusClient
@@ -35,12 +34,12 @@ class VerificationStatus(str, Enum):
 class HealthMetrics:
     """Health metrics for verification."""
 
-    error_rate: Optional[float] = None  # Errors per minute
-    latency_p95: Optional[float] = None  # 95th percentile latency (ms)
-    latency_p99: Optional[float] = None  # 99th percentile latency (ms)
-    availability: Optional[float] = None  # Uptime percentage
-    request_rate: Optional[float] = None  # Requests per second
-    timestamp: Optional[datetime] = None
+    error_rate: float | None = None  # Errors per minute
+    latency_p95: float | None = None  # 95th percentile latency (ms)
+    latency_p99: float | None = None  # 99th percentile latency (ms)
+    availability: float | None = None  # Uptime percentage
+    request_rate: float | None = None  # Requests per second
+    timestamp: datetime | None = None
 
 
 @dataclass
@@ -87,7 +86,7 @@ class PostActionVerifier:
         self,
         service_name: str,
         execution_result: ExecutionResult,
-        before_metrics: Optional[HealthMetrics] = None,
+        before_metrics: HealthMetrics | None = None,
     ) -> VerificationResult:
         """
         Verify that an action improved system health.
@@ -179,7 +178,7 @@ class PostActionVerifier:
     async def _fetch_health_metrics(
         self,
         service_name: str,
-        time: Optional[datetime] = None,
+        time: datetime | None = None,
     ) -> HealthMetrics:
         """
         Fetch current health metrics for a service.
@@ -352,7 +351,7 @@ class PostActionVerifier:
         if before.error_rate is not None and after.error_rate is not None:
             delta = after.error_rate - before.error_rate
             delta_pct = improvements.get("error_rate", 0.0)
-            lines.append(f"\nError Rate:")
+            lines.append("\nError Rate:")
             lines.append(f"  Before: {before.error_rate:.2f} errors/min")
             lines.append(f"  After:  {after.error_rate:.2f} errors/min")
             lines.append(f"  Δ = {delta:+.2f} errors/min ({delta_pct:+.1f}%)")
@@ -361,7 +360,7 @@ class PostActionVerifier:
         if before.latency_p95 is not None and after.latency_p95 is not None:
             delta = after.latency_p95 - before.latency_p95
             delta_pct = improvements.get("latency_p95", 0.0)
-            lines.append(f"\nLatency P95:")
+            lines.append("\nLatency P95:")
             lines.append(f"  Before: {before.latency_p95:.1f}ms")
             lines.append(f"  After:  {after.latency_p95:.1f}ms")
             lines.append(f"  Δ = {delta:+.1f}ms ({delta_pct:+.1f}%)")
@@ -370,7 +369,7 @@ class PostActionVerifier:
         if before.latency_p99 is not None and after.latency_p99 is not None:
             delta = after.latency_p99 - before.latency_p99
             delta_pct = improvements.get("latency_p99", 0.0)
-            lines.append(f"\nLatency P99:")
+            lines.append("\nLatency P99:")
             lines.append(f"  Before: {before.latency_p99:.1f}ms")
             lines.append(f"  After:  {after.latency_p99:.1f}ms")
             lines.append(f"  Δ = {delta:+.1f}ms ({delta_pct:+.1f}%)")
@@ -379,7 +378,7 @@ class PostActionVerifier:
         if before.availability is not None and after.availability is not None:
             delta = after.availability - before.availability
             delta_pct = improvements.get("availability", 0.0)
-            lines.append(f"\nAvailability:")
+            lines.append("\nAvailability:")
             lines.append(f"  Before: {before.availability:.2%}")
             lines.append(f"  After:  {after.availability:.2%}")
             lines.append(f"  Δ = {delta:+.2%} ({delta_pct:+.1f}%)")
@@ -387,7 +386,7 @@ class PostActionVerifier:
         # Request rate
         if before.request_rate is not None and after.request_rate is not None:
             delta = after.request_rate - before.request_rate
-            lines.append(f"\nRequest Rate:")
+            lines.append("\nRequest Rate:")
             lines.append(f"  Before: {before.request_rate:.1f} req/s")
             lines.append(f"  After:  {after.request_rate:.1f} req/s")
             lines.append(f"  Δ = {delta:+.1f} req/s")

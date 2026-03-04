@@ -7,12 +7,12 @@ Senior Engineering Note:
 - ConfigDict for ORM integration
 """
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.engineer_review import ReviewStatus, ReviewDecision
+from app.models.engineer_review import ReviewDecision, ReviewStatus
 
 if TYPE_CHECKING:
     from app.schemas.engineer import EngineerResponse
@@ -45,33 +45,33 @@ class EngineerReviewCreate(EngineerReviewBase):
 class EngineerReviewUpdate(BaseModel):
     """Schema for updating a review (engineer submits review)."""
 
-    status: Optional[ReviewStatus] = None
-    started_at: Optional[datetime] = None
-    submitted_at: Optional[datetime] = None
-    ai_hypotheses_reviewed: Optional[dict] = Field(
+    status: ReviewStatus | None = None
+    started_at: datetime | None = None
+    submitted_at: datetime | None = None
+    ai_hypotheses_reviewed: dict | None = Field(
         None,
         description="Map of hypothesis_id -> validation result (validated/rejected/uncertain)",
     )
-    ai_confidence_assessment: Optional[str] = Field(
+    ai_confidence_assessment: str | None = Field(
         None,
         description="Engineer's assessment of AI confidence scores",
     )
-    alternative_hypotheses: Optional[list[dict]] = Field(
+    alternative_hypotheses: list[dict] | None = Field(
         None,
         description="Engineer-proposed alternative root causes",
     )
-    suggested_approach: Optional[dict] = Field(
+    suggested_approach: dict | None = Field(
         None,
         description="Engineer's suggested remediation approach",
     )
-    engineer_confidence_score: Optional[float] = Field(
+    engineer_confidence_score: float | None = Field(
         None,
         ge=0.0,
         le=1.0,
         description="Engineer's confidence in their approach (0-1)",
     )
-    notes: Optional[str] = None
-    tags: Optional[list[str]] = None
+    notes: str | None = None
+    tags: list[str] | None = None
 
 
 class EngineerReviewSubmit(BaseModel):
@@ -114,20 +114,20 @@ class EngineerReviewResponse(EngineerReviewBase):
     engineer_id: UUID
     status: ReviewStatus
     assigned_at: datetime
-    started_at: Optional[datetime] = None
-    submitted_at: Optional[datetime] = None
-    review_time_minutes: Optional[float] = None
+    started_at: datetime | None = None
+    submitted_at: datetime | None = None
+    review_time_minutes: float | None = None
     ai_hypotheses_reviewed: dict
-    ai_confidence_assessment: Optional[str] = None
+    ai_confidence_assessment: str | None = None
     alternative_hypotheses: list[dict]
     suggested_approach: dict
-    engineer_confidence_score: Optional[float] = None
+    engineer_confidence_score: float | None = None
     decision: ReviewDecision
-    decision_made_at: Optional[datetime] = None
-    decision_rationale: Optional[str] = None
-    approach_executed: Optional[str] = None
-    execution_successful: Optional[bool] = None
-    outcome_notes: Optional[str] = None
+    decision_made_at: datetime | None = None
+    decision_rationale: str | None = None
+    approach_executed: str | None = None
+    execution_successful: bool | None = None
+    outcome_notes: str | None = None
     priority: str
     additional_info: dict
     created_at: datetime

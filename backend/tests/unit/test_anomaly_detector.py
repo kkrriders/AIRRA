@@ -7,12 +7,13 @@ Senior Engineering Note:
 - Mocks external dependencies
 - Covers edge cases
 """
-import pytest
 from datetime import datetime
 
+import pytest
+
 from app.core.perception.anomaly_detector import (
-    AnomalyDetector,
     AnomalyDetection,
+    AnomalyDetector,
     categorize_anomaly,
 )
 from app.services.prometheus_client import MetricDataPoint, MetricResult

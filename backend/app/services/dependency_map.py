@@ -13,7 +13,6 @@ Senior Engineering Note:
 import logging
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -54,9 +53,9 @@ class ServiceMetadata(BaseModel):
     name: str
     tier: ServiceTier
     team: str
-    repository: Optional[str] = None
-    on_call: Optional[str] = None
-    runbook_url: Optional[str] = None
+    repository: str | None = None
+    on_call: str | None = None
+    runbook_url: str | None = None
 
 
 class BlastRadius(BaseModel):
@@ -77,7 +76,7 @@ class CMDBAdapter(ABC):
         pass
 
     @abstractmethod
-    async def get_service_metadata(self, service_id: str) -> Optional[ServiceMetadata]:
+    async def get_service_metadata(self, service_id: str) -> ServiceMetadata | None:
         """Get metadata about a service."""
         pass
 
@@ -103,7 +102,7 @@ class StaticDependencyAdapter(CMDBAdapter):
     def _load_config(self):
         """Load dependency configuration from file."""
         try:
-            with open(self.config_file, "r") as f:
+            with open(self.config_file) as f:
                 config = yaml.safe_load(f)
 
             # Load service metadata
@@ -227,7 +226,7 @@ class StaticDependencyAdapter(CMDBAdapter):
         downstream = [d for d in self.dependencies if d.target_service == service_id]
         return upstream + downstream
 
-    async def get_service_metadata(self, service_id: str) -> Optional[ServiceMetadata]:
+    async def get_service_metadata(self, service_id: str) -> ServiceMetadata | None:
         """Get metadata about a service."""
         return self.services.get(service_id)
 
@@ -267,7 +266,7 @@ class StaticDependencyAdapter(CMDBAdapter):
         )
 
     def _calculate_downstream_impact(
-        self, service_id: str, affected: set, visited: Optional[set] = None
+        self, service_id: str, affected: set, visited: set | None = None
     ):
         """Recursively calculate downstream impact."""
         if visited is None:
@@ -290,7 +289,7 @@ class StaticDependencyAdapter(CMDBAdapter):
 
 
 # Global adapter instance
-_adapter: Optional[CMDBAdapter] = None
+_adapter: CMDBAdapter | None = None
 
 
 def get_dependency_adapter() -> CMDBAdapter:

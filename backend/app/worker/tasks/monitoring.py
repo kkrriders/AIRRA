@@ -6,7 +6,6 @@ the configured schedule (every 60s for anomaly checks, every 30min for AI genera
 This replaces the infinite while-loop + asyncio.sleep() pattern from the services.
 """
 import asyncio
-import logging
 
 from celery.utils.log import get_task_logger
 

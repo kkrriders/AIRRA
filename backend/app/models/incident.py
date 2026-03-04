@@ -12,16 +12,17 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Index, String, Text, Enum as SQLEnum, Integer, ForeignKey
+from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from app.models.hypothesis import Hypothesis
     from app.models.action import Action
-    from app.models.engineer_review import EngineerReview
     from app.models.engineer import Engineer
+    from app.models.engineer_review import EngineerReview
+    from app.models.hypothesis import Hypothesis
     from app.models.incident_event import IncidentEvent
 
 
@@ -88,7 +89,7 @@ class Incident(Base, TimestampMixin):
     )
 
     # Assignment tracking
-    assigned_engineer_id: Mapped[Optional[UUID]] = mapped_column(
+    assigned_engineer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("engineers.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
@@ -96,13 +97,13 @@ class Incident(Base, TimestampMixin):
     )
 
     # Resolution tracking
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    resolution_time_seconds: Mapped[Optional[int]] = mapped_column(
+    resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    resolution_time_seconds: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Time to resolution in seconds",
     )
-    resolution_summary: Mapped[Optional[str]] = mapped_column(
+    resolution_summary: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Summary of how incident was resolved",

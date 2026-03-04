@@ -3,7 +3,6 @@ Assignment schemas for request/response validation.
 
 Used for incident assignment API endpoints.
 """
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -32,9 +31,9 @@ class AssignmentResponse(BaseModel):
     """Response for assignment operations."""
 
     success: bool
-    engineer: Optional[dict] = None
-    strategy: Optional[str] = None
-    reason: Optional[str] = None
+    engineer: dict | None = None
+    strategy: str | None = None
+    reason: str | None = None
 
     class Config:
         from_attributes = True
@@ -45,8 +44,8 @@ class AssignmentInfo(BaseModel):
 
     incident_id: UUID
     is_assigned: bool
-    assigned_engineer: Optional[dict] = None
-    assigned_at: Optional[str] = None
+    assigned_engineer: dict | None = None
+    assigned_at: str | None = None
 
     class Config:
         from_attributes = True

@@ -11,7 +11,6 @@ Senior Engineering Note:
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 
 from app.core.decision.blast_radius import BlastRadiusAssessment, BlastRadiusCalculator
 from app.core.decision.risk_weighted_actions import (
@@ -65,7 +64,7 @@ class SimulationComparison:
     current_metrics: HealthMetrics
 
     simulated_outcomes: list[SimulatedOutcome]
-    best_action: Optional[ActionType]
+    best_action: ActionType | None
     best_action_reasoning: str
 
     simulation_timestamp: datetime
@@ -82,8 +81,8 @@ class WhatIfSimulator:
 
     def __init__(
         self,
-        action_risk_registry: Optional[ActionRiskRegistry] = None,
-        blast_calculator: Optional[BlastRadiusCalculator] = None,
+        action_risk_registry: ActionRiskRegistry | None = None,
+        blast_calculator: BlastRadiusCalculator | None = None,
     ):
         """
         Initialize what-if simulator.
@@ -113,7 +112,7 @@ class WhatIfSimulator:
         incident_category: str,
         candidate_actions: list[ActionType],
         current_metrics: HealthMetrics,
-        blast_radius: Optional[BlastRadiusAssessment] = None,
+        blast_radius: BlastRadiusAssessment | None = None,
         service_criticality: str = "medium",
         current_downtime_seconds: float = 0,
     ) -> SimulationComparison:
@@ -214,7 +213,7 @@ class WhatIfSimulator:
         service_name: str,
         incident_category: str,
         current_metrics: HealthMetrics,
-        blast_radius: Optional[BlastRadiusAssessment],
+        blast_radius: BlastRadiusAssessment | None,
         service_criticality: str,
         current_downtime_seconds: float,
     ) -> SimulatedOutcome:
@@ -513,12 +512,12 @@ class WhatIfSimulator:
             lines.append(f"   Blast Radius: {outcome.blast_radius_impact}")
 
             if outcome.potential_side_effects:
-                lines.append(f"   Side Effects:")
+                lines.append("   Side Effects:")
                 for effect in outcome.potential_side_effects[:3]:
                     lines.append(f"     - {effect}")
 
             if not outcome.prerequisites_met:
-                lines.append(f"   ⚠ Prerequisites Missing:")
+                lines.append("   ⚠ Prerequisites Missing:")
                 for prereq in outcome.prerequisites_missing:
                     lines.append(f"     - {prereq}")
 
@@ -538,7 +537,7 @@ class WhatIfSimulator:
 
 
 # Global instance
-_what_if_simulator: Optional[WhatIfSimulator] = None
+_what_if_simulator: WhatIfSimulator | None = None
 
 
 def get_what_if_simulator() -> WhatIfSimulator:

@@ -8,11 +8,11 @@ Tests the complete simulation flow:
 - Stop simulation
 - Validate expected outcomes
 """
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from httpx import AsyncClient
-from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.main import app
 from app.core.simulation.scenario_definitions import SCENARIO_REGISTRY
 
 
@@ -282,7 +282,10 @@ class TestSimulatorAPI:
                 mock_client.post.return_value = mock_response
                 mock_http.return_value = mock_client
 
-                from app.core.reasoning.hypothesis_generator import HypothesesResponse, HypothesisItem
+                from app.core.reasoning.hypothesis_generator import (
+                    HypothesesResponse,
+                    HypothesisItem,
+                )
                 from app.services.llm_client import LLMResponse
 
                 mock_llm = AsyncMock()

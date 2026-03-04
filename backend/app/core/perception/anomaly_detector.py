@@ -10,9 +10,8 @@ import logging
 import statistics
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
-from app.services.prometheus_client import MetricDataPoint, MetricResult
+from app.services.prometheus_client import MetricResult
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ class AnomalyDetector:
     def detect(
         self,
         metric_result: MetricResult,
-        window_size: Optional[int] = None,
+        window_size: int | None = None,
     ) -> list[AnomalyDetection]:
         """
         Detect anomalies in metric data.

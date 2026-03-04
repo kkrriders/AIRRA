@@ -14,25 +14,22 @@ Performance Notes:
 - Results cached in Redis with 5-minute TTL
 - Service names validated with regex to prevent injection
 """
-import hashlib
 import json
 import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import Integer, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import verify_api_key
-from app.database import get_db
-from app.models.incident import Incident, IncidentStatus, IncidentSeverity
-from app.models.notification import Notification
 from app.core.redis import get_redis
-from pydantic import BaseModel, Field, field_validator
+from app.database import get_db
+from app.models.incident import Incident, IncidentSeverity, IncidentStatus
+from app.models.notification import Notification
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +144,8 @@ class ServiceReliability(BaseModel):
     service: str
     total_incidents: int
     critical_incidents: int
-    avg_resolution_time_minutes: Optional[float]
-    sla_compliance_rate: Optional[float]
+    avg_resolution_time_minutes: float | None
+    sla_compliance_rate: float | None
     reliability_score: float  # 0-100, based on incident frequency and severity
 
 
@@ -157,9 +154,9 @@ class IncidentAnalytics(BaseModel):
     total_incidents: int
     open_incidents: int
     resolved_incidents: int
-    avg_resolution_time_minutes: Optional[float]
-    mttr_minutes: Optional[float]  # Mean Time To Resolution
-    sla_compliance_rate: Optional[float]
+    avg_resolution_time_minutes: float | None
+    mttr_minutes: float | None  # Mean Time To Resolution
+    sla_compliance_rate: float | None
 
     # Severity distribution
     critical_count: int

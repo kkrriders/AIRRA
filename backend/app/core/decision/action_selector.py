@@ -9,7 +9,6 @@ Senior Engineering Note:
 """
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from app.core.reasoning.hypothesis_generator import HypothesisItem
 from app.models.action import ActionType, RiskLevel
@@ -25,7 +24,7 @@ class ActionRecommendation:
     name: str
     description: str
     target_service: str
-    target_resource: Optional[str]
+    target_resource: str | None
     risk_level: RiskLevel
     risk_score: float  # 0.0 to 1.0
     blast_radius: str  # "low", "medium", "high", "critical"
@@ -73,8 +72,8 @@ class ActionSelector:
         self,
         hypothesis: HypothesisItem,
         service_name: str,
-        service_context: Optional[dict] = None,
-    ) -> Optional[ActionRecommendation]:
+        service_context: dict | None = None,
+    ) -> ActionRecommendation | None:
         """
         Select appropriate action for a hypothesis.
 
@@ -149,8 +148,8 @@ class ActionSelector:
         self,
         hypotheses: list[HypothesisItem],
         service_name: str,
-        service_context: Optional[dict] = None,
-    ) -> Optional[ActionRecommendation]:
+        service_context: dict | None = None,
+    ) -> ActionRecommendation | None:
         """
         Select the best action from multiple hypotheses.
 
@@ -178,7 +177,7 @@ class ActionSelector:
         self,
         base_risk_level: RiskLevel,
         confidence: float,
-        service_context: Optional[dict] = None,
+        service_context: dict | None = None,
     ) -> float:
         """
         Calculate numeric risk score (0.0 to 1.0).
@@ -249,7 +248,7 @@ class ActionSelector:
         self,
         action_type: ActionType,
         service_name: str,
-        service_context: Optional[dict] = None,
+        service_context: dict | None = None,
     ) -> dict:
         """Build action-specific parameters."""
         params = {
@@ -298,8 +297,8 @@ class ActionSelector:
         self,
         action_type: ActionType,
         service_name: str,
-        service_context: Optional[dict] = None,
-    ) -> Optional[str]:
+        service_context: dict | None = None,
+    ) -> str | None:
         """Determine specific resource to target."""
         # In a real implementation, this would query Kubernetes API
         # For MVP, we use service context or return None

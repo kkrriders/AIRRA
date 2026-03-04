@@ -8,26 +8,23 @@ from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.rate_limit import llm_rate_limit
 from app.database import get_db
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.models.incident_event import IncidentEvent, IncidentEventType
+from app.schemas.assignment import (
+    AssignmentInfo,
+    AssignmentResponse,
+    AutoAssignRequest,
+)
 from app.schemas.incident import (
     IncidentCreate,
-    IncidentFilter,
     IncidentListResponse,
     IncidentResponse,
     IncidentUpdate,
     IncidentWithRelations,
 )
-from app.schemas.assignment import (
-    AutoAssignRequest,
-    ManualAssignRequest,
-    AssignmentResponse,
-    AssignmentInfo,
-)
-from app.api.rate_limit import llm_rate_limit
 from app.services.incident_assigner import incident_assigner
-from app.services.event_logger import event_logger
 
 logger = logging.getLogger(__name__)
 

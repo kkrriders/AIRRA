@@ -9,17 +9,18 @@ Senior Engineering Note:
 - Verifies confidence scoring and ranking
 - Covers error scenarios and edge cases
 """
-import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock
+
+import pytest
 
 from app.core.perception.anomaly_detector import AnomalyDetection
 from app.core.reasoning.hypothesis_generator import (
     Evidence,
-    HypothesisGenerator,
-    HypothesisItem,
     HypothesesResponse,
     HypothesesResponseLLM,
+    HypothesisGenerator,
+    HypothesisItem,
     rank_hypotheses,
 )
 from app.services.llm_client import LLMResponse

@@ -14,7 +14,6 @@ import hashlib
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,7 +182,7 @@ async def find_duplicate_incident(
     severity: str | None = None,
     affected_components: list[str] | None = None,
     lookback_minutes: int | None = None,
-) -> Optional[Incident]:
+) -> Incident | None:
     """
     Find duplicate incident using fingerprint matching within a time window.
 

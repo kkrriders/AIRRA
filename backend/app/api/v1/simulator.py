@@ -5,7 +5,6 @@ Provides REST API for running pre-packaged incident scenarios with automated
 analysis. Perfect for demos, testing, and training.
 """
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -16,7 +15,6 @@ from app.core.simulation.scenario_definitions import (
     ScenarioDifficulty,
     ScenarioTag,
     get_scenario,
-    get_scenario_summary,
     list_scenarios,
 )
 from app.core.simulation.scenario_runner import get_scenario_runner
@@ -41,7 +39,7 @@ class ScenarioSummary(BaseModel):
     service: str
     severity: str
     difficulty: str
-    tags: List[str]
+    tags: list[str]
     duration_seconds: int
     metric_count: int
 
@@ -55,12 +53,12 @@ class ScenarioDetail(BaseModel):
     service: str
     severity: str
     difficulty: str
-    tags: List[str]
+    tags: list[str]
     duration_seconds: int
-    metrics: List[dict]
+    metrics: list[dict]
     context: dict
     expected_root_cause: str
-    expected_action_types: List[str]
+    expected_action_types: list[str]
 
 
 class StartScenarioRequest(BaseModel):
@@ -81,11 +79,11 @@ class SimulationResponse(BaseModel):
 
     simulation_id: str
     scenario_id: str
-    incident_id: Optional[str] = None  # Changed from int to str (UUID)
+    incident_id: str | None = None  # Changed from int to str (UUID)
     status: str
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    error: Optional[str] = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    error: str | None = None
     hypotheses_count: int = 0
     actions_count: int = 0
     metrics_injected: bool = False
@@ -98,12 +96,12 @@ class SimulationResponse(BaseModel):
 
 @router.get(
     "/scenarios",
-    response_model=List[ScenarioSummary],
+    response_model=list[ScenarioSummary],
     summary="List all available scenarios",
 )
 async def list_available_scenarios(
-    difficulty: Optional[ScenarioDifficulty] = None,
-    tag: Optional[ScenarioTag] = None,
+    difficulty: ScenarioDifficulty | None = None,
+    tag: ScenarioTag | None = None,
 ):
     """
     List all available incident scenarios.
@@ -404,7 +402,7 @@ async def get_simulation_status(simulation_id: str):
 
 @router.get(
     "/simulations",
-    response_model=List[SimulationResponse],
+    response_model=list[SimulationResponse],
     summary="List all active simulations",
 )
 async def list_active_simulations():

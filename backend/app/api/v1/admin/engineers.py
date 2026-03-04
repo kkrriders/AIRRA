@@ -19,12 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.engineer import Engineer, EngineerStatus
 from app.schemas.engineer import (
+    EngineerAvailability,
     EngineerCreate,
     EngineerListResponse,
     EngineerResponse,
     EngineerUpdate,
     EngineerWithStats,
-    EngineerAvailability,
 )
 
 logger = logging.getLogger(__name__)

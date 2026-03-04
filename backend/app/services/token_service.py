@@ -11,7 +11,6 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from app.config import settings
@@ -76,7 +75,7 @@ class TokenService:
         notification_id: UUID,
         engineer_id: UUID,
         expires_at: datetime,
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Validate a token for notification acknowledgement.
 

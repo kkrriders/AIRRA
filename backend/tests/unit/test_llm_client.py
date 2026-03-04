@@ -1,8 +1,15 @@
 """Unit tests for LLM client."""
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
-from app.services.llm_client import AnthropicClient, OpenAIClient, OpenRouterClient, get_llm_client, LLMResponse
-from app.core.reasoning.hypothesis_generator import HypothesesResponse
+
+from app.services.llm_client import (
+    AnthropicClient,
+    LLMResponse,
+    OpenAIClient,
+    OpenRouterClient,
+    get_llm_client,
+)
 
 
 class TestAnthropicClient:
@@ -106,8 +113,9 @@ class TestLLMClientFactory:
 
     def test_returns_anthropic_client(self, monkeypatch):
         """Test factory returns Anthropic client."""
-        from app.config import settings
         from pydantic import SecretStr
+
+        from app.config import settings
         monkeypatch.setattr(settings, "llm_provider", "anthropic")
         monkeypatch.setattr(settings, "anthropic_api_key", SecretStr("test-key"))
 
@@ -116,8 +124,9 @@ class TestLLMClientFactory:
 
     def test_returns_openai_client(self, monkeypatch):
         """Test factory returns OpenAI client."""
-        from app.config import settings
         from pydantic import SecretStr
+
+        from app.config import settings
         monkeypatch.setattr(settings, "llm_provider", "openai")
         monkeypatch.setattr(settings, "openai_api_key", SecretStr("test-key"))
 
@@ -126,8 +135,9 @@ class TestLLMClientFactory:
 
     def test_returns_openrouter_client(self, monkeypatch):
         """Test factory returns OpenRouter client."""
-        from app.config import settings
         from pydantic import SecretStr
+
+        from app.config import settings
         monkeypatch.setattr(settings, "llm_provider", "openrouter")
         monkeypatch.setattr(settings, "openrouter_api_key", SecretStr("test-key"))
 
@@ -144,8 +154,9 @@ class TestLLMClientFactory:
 
     def test_raises_error_for_missing_api_key(self, monkeypatch):
         """Test error when API key missing."""
-        from app.config import settings
         from pydantic import SecretStr
+
+        from app.config import settings
         monkeypatch.setattr(settings, "llm_provider", "anthropic")
         monkeypatch.setattr(settings, "anthropic_api_key", SecretStr(""))
 

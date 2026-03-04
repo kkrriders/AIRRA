@@ -5,7 +5,6 @@ Uses LLM to dynamically generate incident scenarios from natural language prompt
 This allows creating unlimited variations of incidents for realistic demo timelines.
 """
 import logging
-from typing import Dict, List
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
@@ -14,8 +13,8 @@ from app.core.simulation.scenario_definitions import (
     IncidentScenario,
     MetricPattern,
     MetricPatternType,
-    ScenarioTag,
     ScenarioDifficulty,
+    ScenarioTag,
 )
 from app.services.llm_client import LLMClient, get_llm_client
 
@@ -39,9 +38,9 @@ class GeneratedScenario(BaseModel):
     description: str = Field(description="Detailed description of what went wrong")
     root_cause: str = Field(description="Technical root cause category")
     severity: str = Field(description="Severity level: low, medium, high, or critical")
-    metrics: List[GeneratedMetric] = Field(description="List of anomalous metrics")
-    context: Dict = Field(default_factory=dict, description="Additional context like deployments")
-    expected_action_types: List[str] = Field(
+    metrics: list[GeneratedMetric] = Field(description="List of anomalous metrics")
+    context: dict = Field(default_factory=dict, description="Additional context like deployments")
+    expected_action_types: list[str] = Field(
         default_factory=list,
         description="Expected remediation action types"
     )
@@ -251,7 +250,7 @@ Current timestamp: {datetime.now(timezone.utc).isoformat()}
 
         return scenario
 
-    def _infer_tags(self, root_cause: str, description: str) -> List[ScenarioTag]:
+    def _infer_tags(self, root_cause: str, description: str) -> list[ScenarioTag]:
         """Infer appropriate tags from root cause and description."""
         tags = []
 

@@ -13,10 +13,10 @@ import logging
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Type, TypeVar
+from typing import TypeVar
 
-from anthropic import Anthropic, AsyncAnthropic
-from openai import AsyncOpenAI, OpenAI
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel
 from tenacity import (
@@ -184,9 +184,9 @@ class LLMClient(ABC):
     async def _generate_raw(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Internal method to generate text completion without cache."""
         pass
@@ -199,9 +199,9 @@ class LLMClient(ABC):
     async def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         use_cache: bool = True,
     ) -> LLMResponse:
         """Generate text completion with caching and Prometheus instrumentation."""
@@ -247,9 +247,9 @@ class LLMClient(ABC):
     async def generate_structured(
         self,
         prompt: str,
-        response_model: Type[T],
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
+        response_model: type[T],
+        system_prompt: str | None = None,
+        temperature: float | None = None,
     ) -> tuple[T, LLMResponse]:
         """Generate structured output conforming to a Pydantic model."""
         pass
@@ -278,9 +278,9 @@ class AnthropicClient(LLMClient):
     async def _generate_raw(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Generate text completion with Claude."""
         try:
@@ -314,9 +314,9 @@ class AnthropicClient(LLMClient):
     async def generate_structured(
         self,
         prompt: str,
-        response_model: Type[T],
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
+        response_model: type[T],
+        system_prompt: str | None = None,
+        temperature: float | None = None,
     ) -> tuple[T, LLMResponse]:
         """
         Generate structured output conforming to a Pydantic model.
@@ -384,9 +384,9 @@ class OpenAIClient(LLMClient):
     async def _generate_raw(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Generate text completion with GPT."""
         try:
@@ -421,9 +421,9 @@ class OpenAIClient(LLMClient):
     async def generate_structured(
         self,
         prompt: str,
-        response_model: Type[T],
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
+        response_model: type[T],
+        system_prompt: str | None = None,
+        temperature: float | None = None,
     ) -> tuple[T, LLMResponse]:
         """Generate structured output using OpenAI's JSON mode."""
         schema = response_model.model_json_schema()

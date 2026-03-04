@@ -11,7 +11,6 @@ Each scenario includes:
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Dict, List, Optional
 
 
 class MetricPatternType(str, Enum):
@@ -72,7 +71,7 @@ class ScenarioPhase:
 
     name: str
     duration_seconds: int
-    metrics: List[MetricPattern]
+    metrics: list[MetricPattern]
     description: str = ""
 
 
@@ -98,27 +97,27 @@ class IncidentScenario:
     service_name: str
 
     # Metrics to inject
-    metrics: List[MetricPattern]
+    metrics: list[MetricPattern]
 
     # Expected incident characteristics (for validation)
     expected_severity: str = "medium"
     expected_root_cause: str = ""
-    expected_action_types: List[str] = field(default_factory=list)
+    expected_action_types: list[str] = field(default_factory=list)
 
     # Additional context to enrich the incident
-    context: Dict = field(default_factory=dict)
+    context: dict = field(default_factory=dict)
 
     # Organization and filtering
-    tags: List[ScenarioTag] = field(default_factory=list)
+    tags: list[ScenarioTag] = field(default_factory=list)
     difficulty: ScenarioDifficulty = ScenarioDifficulty.BEGINNER
 
     # Duration for auto-stop (in seconds)
     duration_seconds: int = 300
 
     # Multi-phase support (optional)
-    phases: List[ScenarioPhase] = field(default_factory=list)
+    phases: list[ScenarioPhase] = field(default_factory=list)
 
-    def to_metrics_snapshot(self) -> Dict:
+    def to_metrics_snapshot(self) -> dict:
         """
         Convert scenario metrics to format expected by quick_incident API.
 
@@ -477,7 +476,7 @@ SCENARIO_DEPENDENCY_FAILURE = IncidentScenario(
 # Scenario Registry
 # ============================================
 
-SCENARIO_REGISTRY: Dict[str, IncidentScenario] = {
+SCENARIO_REGISTRY: dict[str, IncidentScenario] = {
     "memory_leak_gradual": SCENARIO_MEMORY_LEAK,
     "cpu_spike_traffic_surge": SCENARIO_CPU_SPIKE,
     "latency_spike_database": SCENARIO_LATENCY_DATABASE,
@@ -490,7 +489,7 @@ SCENARIO_REGISTRY: Dict[str, IncidentScenario] = {
 # Helper Functions
 # ============================================
 
-def get_scenario(scenario_id: str) -> Optional[IncidentScenario]:
+def get_scenario(scenario_id: str) -> IncidentScenario | None:
     """
     Get a scenario by ID.
 
@@ -504,9 +503,9 @@ def get_scenario(scenario_id: str) -> Optional[IncidentScenario]:
 
 
 def list_scenarios(
-    difficulty: Optional[ScenarioDifficulty] = None,
-    tags: Optional[List[ScenarioTag]] = None,
-) -> List[IncidentScenario]:
+    difficulty: ScenarioDifficulty | None = None,
+    tags: list[ScenarioTag] | None = None,
+) -> list[IncidentScenario]:
     """
     List available scenarios with optional filtering.
 
@@ -531,7 +530,7 @@ def list_scenarios(
     return scenarios
 
 
-def get_scenario_summary() -> List[Dict]:
+def get_scenario_summary() -> list[dict]:
     """
     Get a summary of all scenarios for display.
 

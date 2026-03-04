@@ -11,12 +11,11 @@ Senior Engineering Note:
 """
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.core.perception.anomaly_detector import AnomalyDetection
-from app.services.dependency_graph import get_dependency_graph
 from app.services.learning_engine import get_learning_engine
 from app.services.llm_client import LLMClient, LLMResponse
 
@@ -136,7 +135,7 @@ class HypothesesResponse(BaseModel):
 def calculate_hypothesis_confidence(
     hypothesis: HypothesisItemLLM,
     anomalies: list[AnomalyDetection],
-    affected_service: Optional[str] = None,
+    affected_service: str | None = None,
     pattern_adjustment: float = 0.0,
 ) -> float:
     """
@@ -253,8 +252,8 @@ class HypothesisGenerator:
         self,
         anomalies: list[AnomalyDetection],
         service_name: str,
-        service_context: Optional[dict] = None,
-        past_context: Optional[list[dict]] = None,
+        service_context: dict | None = None,
+        past_context: list[dict] | None = None,
     ) -> tuple[HypothesesResponse, LLMResponse]:
         """
         Generate hypotheses from detected anomalies.
@@ -361,8 +360,8 @@ Focus on generating insightful hypotheses. Confidence will be scored determinist
         self,
         anomalies: list[AnomalyDetection],
         service_name: str,
-        service_context: Optional[dict] = None,
-        past_context: Optional[list[dict]] = None,
+        service_context: dict | None = None,
+        past_context: list[dict] | None = None,
     ) -> str:
         """
         Build the prompt for hypothesis generation.
@@ -392,11 +391,11 @@ Anomaly #{i}:
         # Build full prompt (sanitize service_name to prevent injection)
         safe_service_name = sanitize_context_value(service_name)
         prompt_parts = [
-            f"## Incident Analysis Request",
-            f"",
+            "## Incident Analysis Request",
+            "",
             f"**Service:** {safe_service_name}",
-            f"",
-            f"## Detected Anomalies",
+            "",
+            "## Detected Anomalies",
             "",
         ]
         prompt_parts.extend(anomaly_descriptions)

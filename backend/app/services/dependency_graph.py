@@ -3,8 +3,6 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -18,8 +16,8 @@ class ServiceDependency:
     service: str
     depends_on: list[str]  # Upstream dependencies
     depended_by: list[str]  # Downstream dependents
-    tier: Optional[str] = None  # Service tier (tier-1, tier-2, etc.)
-    team: Optional[str] = None  # Owning team
+    tier: str | None = None  # Service tier (tier-1, tier-2, etc.)
+    team: str | None = None  # Owning team
     criticality: str = "medium"  # low, medium, high, critical
 
 
@@ -31,7 +29,7 @@ class DependencyGraph:
     criticality scoring, and confidence boosting based on topology.
     """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         """
         Initialize dependency graph.
 
@@ -74,7 +72,7 @@ class DependencyGraph:
             return
 
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path) as f:
                 if self.config_path.endswith('.json'):
                     config = json.load(f)
                 else:
@@ -298,7 +296,7 @@ class DependencyGraph:
         criticality = self.dependencies[service].criticality
         return criticality_map.get(criticality, 0.5)
 
-    def get_service_info(self, service: str) -> Optional[ServiceDependency]:
+    def get_service_info(self, service: str) -> ServiceDependency | None:
         """Get complete service dependency information."""
         return self.dependencies.get(service)
 
@@ -308,7 +306,7 @@ class DependencyGraph:
 
 
 # Global instance (can be overridden for testing)
-_dependency_graph: Optional[DependencyGraph] = None
+_dependency_graph: DependencyGraph | None = None
 
 
 def get_dependency_graph() -> DependencyGraph:

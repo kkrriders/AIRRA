@@ -7,7 +7,6 @@ Runs as a background task to simulate ongoing system monitoring.
 import logging
 import random
 from datetime import datetime, timezone
-from typing import Optional
 
 from app.config import settings
 from app.database import get_db_context
@@ -223,7 +222,7 @@ Output ONLY valid JSON, no markdown or extra text:
 
 
 # Global generator instance
-_generator: Optional[AIIncidentGenerator] = None
+_generator: AIIncidentGenerator | None = None
 
 
 def get_ai_generator() -> AIIncidentGenerator:

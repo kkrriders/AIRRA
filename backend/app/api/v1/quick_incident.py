@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException  # noqa: F811
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.rate_limit import llm_rate_limit
 from app.config import settings
 from app.core.decision.action_selector import ActionSelector
 from app.core.perception.anomaly_detector import AnomalyDetector, categorize_anomaly
@@ -25,7 +26,6 @@ from app.models.action import Action, ActionStatus
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.schemas.incident import IncidentWithRelations
-from app.api.rate_limit import llm_rate_limit
 from app.services.llm_client import get_llm_client
 from app.services.prometheus_client import get_prometheus_client
 

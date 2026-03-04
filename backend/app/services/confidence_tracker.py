@@ -10,11 +10,9 @@ Senior Engineering Note:
 """
 import json
 import logging
-import os
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +32,9 @@ class ConfidenceOutcomeRecord:
     outcome_success: bool  # Did action actually work?
     outcome_status: str  # success, partial_success, no_change, degraded
     verification_metrics: dict  # Before-after metrics
-    time_to_resolution_seconds: Optional[float] = None
-    blast_radius_level: Optional[str] = None
-    risk_level: Optional[str] = None
+    time_to_resolution_seconds: float | None = None
+    blast_radius_level: str | None = None
+    risk_level: str | None = None
 
 
 class ConfidenceTracker:
@@ -98,7 +96,7 @@ class ConfidenceTracker:
         records = []
 
         try:
-            with open(self.storage_path, "r") as f:
+            with open(self.storage_path) as f:
                 for line in f:
                     if not line.strip():
                         continue
@@ -338,7 +336,7 @@ class ConfidenceTracker:
 
 
 # Global instance
-_confidence_tracker: Optional[ConfidenceTracker] = None
+_confidence_tracker: ConfidenceTracker | None = None
 
 
 def get_confidence_tracker() -> ConfidenceTracker:

@@ -7,15 +7,14 @@ Senior Engineering Note:
 - Secure token handling
 """
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, EmailStr
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.notification import (
     NotificationChannel,
-    NotificationStatus,
     NotificationPriority,
+    NotificationStatus,
 )
 
 
@@ -35,7 +34,7 @@ class NotificationCreate(NotificationBase):
     """Schema for creating a new notification."""
 
     engineer_id: UUID = Field(..., description="Target engineer")
-    incident_id: Optional[UUID] = Field(None, description="Related incident")
+    incident_id: UUID | None = Field(None, description="Related incident")
     recipient_address: str = Field(
         ...,
         min_length=1,
@@ -54,12 +53,12 @@ class NotificationCreate(NotificationBase):
 class NotificationUpdate(BaseModel):
     """Schema for updating a notification."""
 
-    status: Optional[NotificationStatus] = None
-    delivered_at: Optional[datetime] = None
-    acknowledged_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    escalated: Optional[bool] = None
-    escalated_to_engineer_id: Optional[UUID] = None
+    status: NotificationStatus | None = None
+    delivered_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    last_error: str | None = None
+    escalated: bool | None = None
+    escalated_to_engineer_id: UUID | None = None
 
 
 class NotificationResponse(NotificationBase):
@@ -69,21 +68,21 @@ class NotificationResponse(NotificationBase):
 
     id: UUID
     engineer_id: UUID
-    incident_id: Optional[UUID] = None
+    incident_id: UUID | None = None
     status: NotificationStatus
     recipient_address: str
-    sent_at: Optional[datetime] = None
-    delivered_at: Optional[datetime] = None
-    acknowledged_at: Optional[datetime] = None
-    response_time_seconds: Optional[int] = None
+    sent_at: datetime | None = None
+    delivered_at: datetime | None = None
+    acknowledged_at: datetime | None = None
+    response_time_seconds: int | None = None
     sla_target_seconds: int
-    sla_met: Optional[bool] = None
+    sla_met: bool | None = None
     retry_count: int
     max_retries: int
-    last_error: Optional[str] = None
+    last_error: str | None = None
     escalated: bool
-    escalated_to_engineer_id: Optional[UUID] = None
-    escalated_at: Optional[datetime] = None
+    escalated_to_engineer_id: UUID | None = None
+    escalated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -93,8 +92,8 @@ class NotificationWithDetails(NotificationResponse):
 
     engineer_name: str = Field(..., description="Engineer's name")
     engineer_email: str = Field(..., description="Engineer's email")
-    incident_title: Optional[str] = Field(None, description="Incident title")
-    incident_severity: Optional[str] = Field(None, description="Incident severity")
+    incident_title: str | None = Field(None, description="Incident title")
+    incident_severity: str | None = Field(None, description="Incident severity")
 
 
 class NotificationAcknowledge(BaseModel):
@@ -110,7 +109,7 @@ class NotificationSendRequest(BaseModel):
     incident_id: UUID
     channel: NotificationChannel
     priority: NotificationPriority = NotificationPriority.NORMAL
-    custom_message: Optional[str] = Field(
+    custom_message: str | None = Field(
         None,
         description="Custom message (overrides default template)",
     )
@@ -123,12 +122,12 @@ class NotificationStatsResponse(BaseModel):
     total_delivered: int
     total_acknowledged: int
     total_failed: int
-    average_response_time_seconds: Optional[float] = None
-    sla_compliance_rate: Optional[float] = Field(
+    average_response_time_seconds: float | None = None
+    sla_compliance_rate: float | None = Field(
         None,
         description="Percentage of notifications acknowledged within SLA",
     )
-    escalation_rate: Optional[float] = Field(
+    escalation_rate: float | None = Field(
         None,
         description="Percentage of notifications that were escalated",
     )

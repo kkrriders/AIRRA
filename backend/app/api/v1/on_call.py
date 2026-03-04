@@ -8,7 +8,6 @@ Senior Engineering Note:
 - Pagination support
 """
 import logging
-from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,14 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import verify_api_key
 from app.database import get_db
-from app.models.on_call_schedule import OnCallSchedule, OnCallPriority
+from app.models.on_call_schedule import OnCallSchedule
 from app.schemas.on_call_schedule import (
-    OnCallScheduleCreate,
-    OnCallScheduleUpdate,
-    OnCallScheduleResponse,
-    OnCallScheduleWithEngineer,
     OnCallFindRequest,
     OnCallListResponse,
+    OnCallScheduleCreate,
+    OnCallScheduleResponse,
+    OnCallScheduleUpdate,
 )
 from app.services.on_call_finder import on_call_finder
 

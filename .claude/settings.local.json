@@ -32,7 +32,11 @@
       "Bash(rm:*)",
       "Bash(git rm:*)",
       "mcp__ide__getDiagnostics",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)"
     ]
   },
   "outputStyle": "Explanatory"

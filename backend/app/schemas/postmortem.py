@@ -2,7 +2,6 @@
 Postmortem API Schemas
 """
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -13,7 +12,7 @@ class ActionItem(BaseModel):
 
     description: str = Field(..., min_length=1, max_length=500)
     owner: str = Field(..., description="Email of person responsible")
-    due_date: Optional[str] = Field(None, description="Due date (YYYY-MM-DD)")
+    due_date: str | None = Field(None, description="Due date (YYYY-MM-DD)")
     priority: str = Field("medium", description="low, medium, high, critical")
     status: str = Field("open", description="open, in_progress, completed, cancelled")
 
@@ -24,12 +23,12 @@ class PostmortemCreate(BaseModel):
     incident_id: UUID
     actual_root_cause: str = Field(..., min_length=10, max_length=2000)
     contributing_factors: list[str] = Field(default=[])
-    detection_delay_reason: Optional[str] = None
+    detection_delay_reason: str | None = None
 
     # Impact
     duration_minutes: int = Field(..., ge=0)
-    users_affected: Optional[int] = Field(None, ge=0)
-    revenue_impact_usd: Optional[float] = Field(None, ge=0)
+    users_affected: int | None = Field(None, ge=0)
+    revenue_impact_usd: float | None = Field(None, ge=0)
 
     # Learnings
     what_went_well: list[str] = Field(default=[])
@@ -43,45 +42,45 @@ class PostmortemCreate(BaseModel):
     response_improvements: list[str] = Field(default=[])
 
     # AI evaluation
-    ai_hypothesis_correct: Optional[bool] = None
-    ai_evaluation_notes: Optional[str] = None
+    ai_hypothesis_correct: bool | None = None
+    ai_evaluation_notes: str | None = None
 
     # Notes
-    additional_notes: Optional[str] = None
+    additional_notes: str | None = None
 
 
 class PostmortemUpdate(BaseModel):
     """Update an existing postmortem."""
 
-    actual_root_cause: Optional[str] = Field(None, min_length=10, max_length=2000)
-    contributing_factors: Optional[list[str]] = None
-    detection_delay_reason: Optional[str] = None
+    actual_root_cause: str | None = Field(None, min_length=10, max_length=2000)
+    contributing_factors: list[str] | None = None
+    detection_delay_reason: str | None = None
 
     # Impact
-    duration_minutes: Optional[int] = Field(None, ge=0)
-    users_affected: Optional[int] = Field(None, ge=0)
-    revenue_impact_usd: Optional[float] = Field(None, ge=0)
+    duration_minutes: int | None = Field(None, ge=0)
+    users_affected: int | None = Field(None, ge=0)
+    revenue_impact_usd: float | None = Field(None, ge=0)
 
     # Learnings
-    what_went_well: Optional[list[str]] = None
-    what_went_wrong: Optional[list[str]] = None
-    lessons_learned: Optional[list[str]] = None
+    what_went_well: list[str] | None = None
+    what_went_wrong: list[str] | None = None
+    lessons_learned: list[str] | None = None
 
     # Actions
-    action_items: Optional[list[ActionItem]] = None
-    prevention_measures: Optional[list[str]] = None
-    detection_improvements: Optional[list[str]] = None
-    response_improvements: Optional[list[str]] = None
+    action_items: list[ActionItem] | None = None
+    prevention_measures: list[str] | None = None
+    detection_improvements: list[str] | None = None
+    response_improvements: list[str] | None = None
 
     # AI evaluation
-    ai_hypothesis_correct: Optional[bool] = None
-    ai_evaluation_notes: Optional[str] = None
+    ai_hypothesis_correct: bool | None = None
+    ai_evaluation_notes: str | None = None
 
     # Notes
-    additional_notes: Optional[str] = None
+    additional_notes: str | None = None
 
     # Publication
-    published: Optional[bool] = None
+    published: bool | None = None
 
 
 class PostmortemResponse(BaseModel):
@@ -89,17 +88,17 @@ class PostmortemResponse(BaseModel):
 
     id: UUID
     incident_id: UUID
-    author_id: Optional[UUID]
+    author_id: UUID | None
 
     # Root cause
     actual_root_cause: str
     contributing_factors: list[str]
-    detection_delay_reason: Optional[str]
+    detection_delay_reason: str | None
 
     # Impact
     duration_minutes: int
-    users_affected: Optional[int]
-    revenue_impact_usd: Optional[float]
+    users_affected: int | None
+    revenue_impact_usd: float | None
 
     # Learnings
     what_went_well: list[str]
@@ -113,13 +112,13 @@ class PostmortemResponse(BaseModel):
     response_improvements: list[str]
 
     # AI evaluation
-    ai_hypothesis_correct: Optional[bool]
-    ai_evaluation_notes: Optional[str]
+    ai_hypothesis_correct: bool | None
+    ai_evaluation_notes: str | None
 
     # Meta
-    additional_notes: Optional[str]
+    additional_notes: str | None
     published: bool
-    published_at: Optional[datetime]
+    published_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -133,7 +132,7 @@ class TimelineEvent(BaseModel):
     id: UUID
     event_type: str
     description: str
-    actor: Optional[str]
+    actor: str | None
     metadata: dict
     timestamp: datetime
 
@@ -147,4 +146,4 @@ class IncidentTimeline(BaseModel):
     incident_id: UUID
     events: list[TimelineEvent]
     total_events: int
-    duration_minutes: Optional[int]
+    duration_minutes: int | None

@@ -1,14 +1,11 @@
 """Unit tests for Kubernetes executors."""
-import pytest
-from unittest.mock import Mock
-from datetime import datetime
 
+from app.core.execution.base import ExecutionStatus
 from app.core.execution.kubernetes import (
     KubernetesPodRestartExecutor,
     KubernetesScaleExecutor,
     get_executor,
 )
-from app.core.execution.base import ExecutionStatus
 from app.models.action import ActionType
 
 
@@ -202,7 +199,7 @@ class TestExecutionResults:
 
         # Force error with invalid params
         try:
-            result = await executor.execute(target="test", parameters={})
+            await executor.execute(target="test", parameters={})
         except (ValueError, KeyError):
             # Expected
             pass

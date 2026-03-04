@@ -13,8 +13,6 @@ Usage:
     )
 """
 import logging
-from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,8 +31,8 @@ class EventLogger:
         incident_id: UUID,
         event_type: IncidentEventType,
         description: str,
-        actor: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        actor: str | None = None,
+        metadata: dict | None = None,
     ) -> IncidentEvent:
         """
         Log an incident event.
@@ -85,7 +83,7 @@ class EventLogger:
         db: AsyncSession,
         incident_id: UUID,
         description: str,
-        metadata: Optional[dict] = None
+        metadata: dict | None = None
     ):
         """Log incident detection."""
         return await self.log(
@@ -154,7 +152,7 @@ class EventLogger:
         incident_id: UUID,
         action_type: str,
         success: bool,
-        details: Optional[dict] = None
+        details: dict | None = None
     ):
         """Log action execution."""
         status = "completed successfully" if success else "failed"
@@ -172,7 +170,7 @@ class EventLogger:
         db: AsyncSession,
         incident_id: UUID,
         passed: bool,
-        metrics: Optional[dict] = None
+        metrics: dict | None = None
     ):
         """Log post-action verification."""
         status = "passed" if passed else "failed"

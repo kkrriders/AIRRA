@@ -10,12 +10,10 @@ Senior Engineering Note:
 - Verifies confidence scoring with weighted signals
 - Covers edge cases and error scenarios
 """
-import pytest
 from datetime import datetime, timedelta
 
 from app.core.perception.anomaly_detector import AnomalyDetection
 from app.core.perception.signal_correlator import (
-    CorrelatedIncident,
     Signal,
     SignalCorrelator,
     SignalType,

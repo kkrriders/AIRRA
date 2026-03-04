@@ -9,7 +9,7 @@ Senior Engineering Note:
 """
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from pydantic import BaseModel
@@ -52,7 +52,7 @@ class PrometheusClient:
     async def query(
         self,
         query: str,
-        time: Optional[datetime] = None,
+        time: datetime | None = None,
     ) -> list[MetricResult]:
         """
         Execute an instant query.

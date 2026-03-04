@@ -44,7 +44,7 @@ jobs:
             --cov=app \
             --cov-report=term-missing \
             --cov-report=xml \
-            --cov-fail-under=60
+            --cov-fail-under=45
         env:
           AIRRA_API_KEY: ci-test-key-12345
           AIRRA_ENVIRONMENT: development

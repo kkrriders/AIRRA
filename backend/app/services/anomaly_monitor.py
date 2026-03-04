@@ -2,7 +2,6 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from app.config import settings
 from app.core.perception.anomaly_detector import AnomalyDetector, categorize_anomaly
@@ -273,7 +272,7 @@ class AnomalyMonitor:
 
 
 # Global monitor instance
-_monitor: Optional[AnomalyMonitor] = None
+_monitor: AnomalyMonitor | None = None
 
 
 def get_monitor() -> AnomalyMonitor:

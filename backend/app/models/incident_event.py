@@ -15,11 +15,11 @@ Every significant action creates an event:
 - Incident resolved
 """
 import enum
-from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String, Text, JSON, Index, Enum as SQLEnum
+from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, TimestampMixin
@@ -103,7 +103,7 @@ class IncidentEvent(Base, TimestampMixin):
     )
 
     # Actor (who/what triggered this event)
-    actor: Mapped[Optional[str]] = mapped_column(
+    actor: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Who triggered this event: 'system', 'alice@company.com', 'airra-bot'"

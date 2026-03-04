@@ -7,11 +7,11 @@ Provides:
 - Action item tracking
 """
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import verify_api_key
@@ -20,11 +20,11 @@ from app.models.incident import Incident
 from app.models.incident_event import IncidentEvent
 from app.models.postmortem import Postmortem
 from app.schemas.postmortem import (
-    PostmortemCreate,
-    PostmortemUpdate,
-    PostmortemResponse,
-    TimelineEvent,
     IncidentTimeline,
+    PostmortemCreate,
+    PostmortemResponse,
+    PostmortemUpdate,
+    TimelineEvent,
 )
 
 logger = logging.getLogger(__name__)

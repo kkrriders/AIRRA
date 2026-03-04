@@ -9,14 +9,16 @@ Senior Engineering Note:
 """
 import enum
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+from sqlalchemy import (
+    Enum as SQLEnum,
+)
 from sqlalchemy import (
     ForeignKey,
     Index,
     String,
-    Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,13 +60,13 @@ class OnCallSchedule(Base, TimestampMixin):
     )
 
     # Schedule details
-    service: Mapped[Optional[str]] = mapped_column(
+    service: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         index=True,
         comment="Specific service (e.g., 'payment-service'). NULL = all services",
     )
-    team: Mapped[Optional[str]] = mapped_column(
+    team: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
         index=True,
@@ -93,12 +95,12 @@ class OnCallSchedule(Base, TimestampMixin):
     )
 
     # Schedule metadata
-    schedule_name: Mapped[Optional[str]] = mapped_column(
+    schedule_name: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
         comment="Human-readable schedule name (e.g., 'Week 1 Rotation')",
     )
-    rotation_week: Mapped[Optional[int]] = mapped_column(
+    rotation_week: Mapped[int | None] = mapped_column(
         nullable=True,
         comment="Week number in rotation cycle (for recurring schedules)",
     )
@@ -140,7 +142,7 @@ class OnCallSchedule(Base, TimestampMixin):
             f"end={self.end_time})>"
         )
 
-    def is_currently_on_call(self, now: Optional[datetime] = None) -> bool:
+    def is_currently_on_call(self, now: datetime | None = None) -> bool:
         """Check if this schedule is currently active."""
         if not self.is_active:
             return False

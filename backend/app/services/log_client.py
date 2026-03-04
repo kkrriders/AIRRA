@@ -19,7 +19,6 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Optional
 
 import httpx
 from pydantic import BaseModel, Field
@@ -79,7 +78,7 @@ class LogClient:
         service: str,
         start_time: datetime,
         end_time: datetime,
-        level: Optional[LogLevel] = None,
+        level: LogLevel | None = None,
         limit: int = 100,
     ) -> list[LogEntry]:
         """
@@ -113,7 +112,7 @@ class LogClient:
         service: str,
         start_time: datetime,
         end_time: datetime,
-        level: Optional[LogLevel],
+        level: LogLevel | None,
         limit: int,
     ) -> list[LogEntry]:
         """Query Grafana Loki."""
@@ -187,7 +186,7 @@ class LogClient:
         service: str,
         start_time: datetime,
         end_time: datetime,
-        level: Optional[LogLevel],
+        level: LogLevel | None,
         limit: int,
     ) -> list[LogEntry]:
         """Query Elasticsearch."""

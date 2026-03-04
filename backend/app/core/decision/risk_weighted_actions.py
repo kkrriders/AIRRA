@@ -14,9 +14,8 @@ Senior Engineering Note:
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
-from app.models.action import ActionType, RiskLevel
+from app.models.action import ActionType
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +213,7 @@ class ActionRiskRegistry:
             ],
         )
 
-    def get_risk_profile(self, action_type: ActionType) -> Optional[ActionRiskProfile]:
+    def get_risk_profile(self, action_type: ActionType) -> ActionRiskProfile | None:
         """Get risk profile for an action type."""
         return self.risk_profiles.get(action_type)
 
@@ -332,8 +331,8 @@ class ActionRiskRegistry:
         current_downtime_seconds: float = 0,
         blast_radius_multiplier: float = 1.0,
         min_confidence: float = 0.6,
-        action_confidences: Optional[dict[ActionType, float]] = None,
-    ) -> Optional[tuple[ActionType, str]]:
+        action_confidences: dict[ActionType, float] | None = None,
+    ) -> tuple[ActionType, str] | None:
         """
         Select the best action based on risk-reward tradeoff.
 
@@ -399,7 +398,7 @@ class ActionRiskRegistry:
 
 
 # Global instance
-_action_risk_registry: Optional[ActionRiskRegistry] = None
+_action_risk_registry: ActionRiskRegistry | None = None
 
 
 def get_action_risk_registry() -> ActionRiskRegistry:

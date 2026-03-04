@@ -9,16 +9,18 @@ Senior Engineering Note:
 """
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
+    Float,
+    ForeignKey,
     Index,
     String,
     Text,
-    ForeignKey,
-    Float,
+)
+from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,8 +28,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from app.models.incident import Incident
     from app.models.engineer import Engineer
+    from app.models.incident import Incident
 
 
 class ReviewStatus(str, enum.Enum):
@@ -83,9 +85,9 @@ class EngineerReview(Base, TimestampMixin):
         index=True,
     )
     assigned_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
-    started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    submitted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    review_time_minutes: Mapped[Optional[float]] = mapped_column(
+    started_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    review_time_minutes: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
         comment="Time spent on review in minutes",
@@ -98,7 +100,7 @@ class EngineerReview(Base, TimestampMixin):
         default=dict,
         comment="Map of hypothesis_id -> validation result (validated/rejected/uncertain)",
     )
-    ai_confidence_assessment: Mapped[Optional[str]] = mapped_column(
+    ai_confidence_assessment: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Engineer's assessment of AI confidence scores",
@@ -117,7 +119,7 @@ class EngineerReview(Base, TimestampMixin):
         default=dict,
         comment="Engineer's suggested remediation approach",
     )
-    engineer_confidence_score: Mapped[Optional[float]] = mapped_column(
+    engineer_confidence_score: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
         comment="Engineer's confidence in their suggested approach (0-1)",
@@ -144,21 +146,21 @@ class EngineerReview(Base, TimestampMixin):
         default=ReviewDecision.PENDING,
         index=True,
     )
-    decision_made_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
-    decision_rationale: Mapped[Optional[str]] = mapped_column(
+    decision_made_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    decision_rationale: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Explanation for choosing AI vs Engineer approach",
     )
 
     # Outcome tracking
-    approach_executed: Mapped[Optional[str]] = mapped_column(
+    approach_executed: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
         comment="Which approach was executed (ai/engineer/hybrid)",
     )
-    execution_successful: Mapped[Optional[bool]] = mapped_column(nullable=True)
-    outcome_notes: Mapped[Optional[str]] = mapped_column(
+    execution_successful: Mapped[bool | None] = mapped_column(nullable=True)
+    outcome_notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Notes about execution outcome",
@@ -235,7 +237,7 @@ class EngineerReview(Base, TimestampMixin):
             "updated_at": self.updated_at.isoformat(),
         }
 
-    def calculate_review_time(self) -> Optional[float]:
+    def calculate_review_time(self) -> float | None:
         """Calculate review time in minutes if both timestamps exist."""
         if self.started_at and self.submitted_at:
             delta = self.submitted_at - self.started_at

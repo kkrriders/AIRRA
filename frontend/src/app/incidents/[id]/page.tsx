@@ -400,7 +400,7 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                   <PostIncidentReviewForm
                     incidentId={id}
                     durationMinutes={durationMinutes}
-                    initialData={isEditingPIR ? postmortem : undefined}
+                    initialData={isEditingPIR ? (postmortem ?? undefined) : undefined}
                     isEditing={isEditingPIR}
                     onSubmit={async (data) => {
                       if (isEditingPIR && postmortem) {

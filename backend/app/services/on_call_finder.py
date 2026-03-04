@@ -9,15 +9,14 @@ Senior Engineering Note:
 """
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.engineer import Engineer, EngineerStatus
-from app.models.on_call_schedule import OnCallSchedule, OnCallPriority
+from app.models.engineer import Engineer
+from app.models.on_call_schedule import OnCallPriority, OnCallSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +49,11 @@ class OnCallFinder:
     async def find_on_call_engineer(
         self,
         db: AsyncSession,
-        service: Optional[str] = None,
-        team: Optional[str] = None,
-        at_time: Optional[datetime] = None,
-        priority: Optional[OnCallPriority] = None,
-    ) -> Optional[OnCallResult]:
+        service: str | None = None,
+        team: str | None = None,
+        at_time: datetime | None = None,
+        priority: OnCallPriority | None = None,
+    ) -> OnCallResult | None:
         """
         Find the on-call engineer for given criteria.
 
@@ -159,9 +158,9 @@ class OnCallFinder:
     async def find_escalation_chain(
         self,
         db: AsyncSession,
-        service: Optional[str] = None,
-        team: Optional[str] = None,
-        at_time: Optional[datetime] = None,
+        service: str | None = None,
+        team: str | None = None,
+        at_time: datetime | None = None,
     ) -> list[OnCallResult]:
         """
         Find complete escalation chain (primary → secondary → tertiary).
@@ -202,7 +201,7 @@ class OnCallFinder:
     async def get_all_current_on_call(
         self,
         db: AsyncSession,
-        at_time: Optional[datetime] = None,
+        at_time: datetime | None = None,
     ) -> list[OnCallResult]:
         """
         Get all currently on-call engineers across all services.
@@ -248,7 +247,7 @@ class OnCallFinder:
         self,
         db: AsyncSession,
         engineer_id: UUID,
-        at_time: Optional[datetime] = None,
+        at_time: datetime | None = None,
     ) -> list[OnCallSchedule]:
         """
         Check if a specific engineer is on-call.

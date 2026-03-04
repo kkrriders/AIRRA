@@ -1,5 +1,4 @@
 """Integration tests for Actions API endpoints."""
-import pytest
 
 
 class TestActionsAPI:

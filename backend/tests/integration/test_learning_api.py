@@ -1,5 +1,4 @@
 """Integration tests for Learning API endpoints."""
-import pytest
 
 
 class TestLearningAPI:

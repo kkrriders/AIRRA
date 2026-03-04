@@ -10,10 +10,9 @@ Senior Engineering Note:
 - Tests action mapping for all categories
 - Covers parameter building and resource targeting
 """
-import pytest
 
-from app.core.decision.action_selector import ActionRecommendation, ActionSelector
-from app.core.reasoning.hypothesis_generator import Evidence, HypothesisItem
+from app.core.decision.action_selector import ActionSelector
+from app.core.reasoning.hypothesis_generator import HypothesisItem
 from app.models.action import ActionType, RiskLevel
 
 

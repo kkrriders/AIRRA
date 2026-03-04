@@ -11,9 +11,8 @@ Senior Engineering Note:
 """
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from app.services.dependency_graph import get_dependency_graph
 from app.services.prometheus_client import PrometheusClient
@@ -78,7 +77,7 @@ class BlastRadiusCalculator:
     async def calculate_blast_radius(
         self,
         service_name: str,
-        incident_start_time: Optional[datetime] = None,
+        incident_start_time: datetime | None = None,
     ) -> BlastRadiusAssessment:
         """
         Calculate blast radius for a service incident.
@@ -348,7 +347,7 @@ class BlastRadiusCalculator:
             Tuple of (should_act_immediately, reasoning)
         """
         level = assessment.level
-        urgency = assessment.urgency_multiplier
+        _urgency = assessment.urgency_multiplier
 
         if level == BlastRadiusLevel.CRITICAL:
             return (
@@ -384,7 +383,7 @@ class BlastRadiusCalculator:
 
 
 # Global instance
-_blast_radius_calculator: Optional[BlastRadiusCalculator] = None
+_blast_radius_calculator: BlastRadiusCalculator | None = None
 
 
 def get_blast_radius_calculator(

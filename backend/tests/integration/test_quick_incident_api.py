@@ -1,5 +1,4 @@
 """Integration tests for Quick Incident API endpoint."""
-import pytest
 
 
 class TestQuickIncidentAPI:

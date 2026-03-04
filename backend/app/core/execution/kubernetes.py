@@ -13,7 +13,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 from app.core.execution.base import ActionExecutor, ExecutionResult, ExecutionStatus
 
@@ -26,7 +26,7 @@ K8S_NAME_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0
 K8S_MAX_NAME_LENGTH = 253
 
 
-def validate_k8s_resource_name(name: str, field_name: str = "resource") -> tuple[bool, Optional[str]]:
+def validate_k8s_resource_name(name: str, field_name: str = "resource") -> tuple[bool, str | None]:
     """
     Validate a Kubernetes resource name.
 
@@ -63,7 +63,7 @@ class KubernetesPodRestartExecutor(ActionExecutor):
     - Validates namespace exists
     """
 
-    def __init__(self, dry_run: bool = True, k8s_client: Optional[Any] = None):
+    def __init__(self, dry_run: bool = True, k8s_client: Any | None = None):
         """
         Initialize executor.
 
@@ -154,13 +154,13 @@ class KubernetesPodRestartExecutor(ActionExecutor):
                 else:
                     # Import kubernetes client (optional dependency)
                     from kubernetes import client, config
-    
+
                     # Load kubeconfig: try in-cluster first, fall back to local
                     try:
                         config.load_incluster_config()
                     except config.ConfigException:
                         config.load_kube_config()
-    
+
                     v1 = client.CoreV1Api()
 
                 # If specific pod specified, delete it
@@ -239,7 +239,7 @@ class KubernetesPodRestartExecutor(ActionExecutor):
         self,
         target: str,
         parameters: dict[str, Any],
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Validate pod restart is safe.
 
@@ -271,12 +271,12 @@ class KubernetesPodRestartExecutor(ActionExecutor):
                     apps_v1 = self.k8s_client.AppsV1Api()
                 else:
                     from kubernetes import client, config
-    
+
                     try:
                         config.load_incluster_config()
                     except config.ConfigException:
                         config.load_kube_config()
-    
+
                     apps_v1 = client.AppsV1Api()
 
                 # Get deployment
@@ -335,7 +335,7 @@ class KubernetesScaleExecutor(ActionExecutor):
     - Checks resource availability
     """
 
-    def __init__(self, dry_run: bool = True, k8s_client: Optional[Any] = None):
+    def __init__(self, dry_run: bool = True, k8s_client: Any | None = None):
         """
         Initialize executor.
 
@@ -418,12 +418,12 @@ class KubernetesScaleExecutor(ActionExecutor):
                     apps_v1 = self.k8s_client.AppsV1Api()
                 else:
                     from kubernetes import client, config
-    
+
                     try:
                         config.load_incluster_config()
                     except config.ConfigException:
                         config.load_kube_config()
-    
+
                     apps_v1 = client.AppsV1Api()
 
                 # Get current replica count
@@ -485,7 +485,7 @@ class KubernetesScaleExecutor(ActionExecutor):
         self,
         target: str,
         parameters: dict[str, Any],
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Validate scale operation is safe."""
         # Validate resource names
         namespace = parameters.get("namespace", "default")
@@ -561,7 +561,7 @@ EXECUTOR_REGISTRY: dict[str, type[ActionExecutor]] = {
 }
 
 
-def get_executor(action_type: str, dry_run: bool = True) -> Optional[ActionExecutor]:
+def get_executor(action_type: str, dry_run: bool = True) -> ActionExecutor | None:
     """Get an executor instance for the given action type."""
     executor_class = EXECUTOR_REGISTRY.get(action_type)
     if executor_class:

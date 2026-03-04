@@ -17,17 +17,16 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.engineer import Engineer, EngineerStatus
-from app.models.engineer_review import EngineerReview, ReviewStatus, ReviewDecision
+from app.models.engineer_review import EngineerReview, ReviewDecision, ReviewStatus
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.schemas.engineer_review import (
-    EngineerReviewCreate,
     EngineerReviewListResponse,
     EngineerReviewResponse,
     EngineerReviewSubmit,
     EngineerReviewWithRelations,
     ReviewAssignment,
-    ReviewDecisionRequest,
     ReviewComparison,
+    ReviewDecisionRequest,
 )
 from app.schemas.incident import IncidentResponse
 

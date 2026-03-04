@@ -15,14 +15,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String, Text, JSON, Integer, Float
+from sqlalchemy import JSON, Float, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from app.models.incident import Incident
     from app.models.engineer import Engineer
+    from app.models.incident import Incident
 
 
 class Postmortem(Base, TimestampMixin):
@@ -73,7 +73,7 @@ class Postmortem(Base, TimestampMixin):
     )
 
     # Why detection was delayed (if applicable)
-    detection_delay_reason: Mapped[Optional[str]] = mapped_column(
+    detection_delay_reason: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Why we didn't catch this earlier"
@@ -89,14 +89,14 @@ class Postmortem(Base, TimestampMixin):
     )
 
     # Number of users affected
-    users_affected: Mapped[Optional[int]] = mapped_column(
+    users_affected: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Estimated number of impacted users"
     )
 
     # Revenue impact (if applicable)
-    revenue_impact_usd: Mapped[Optional[float]] = mapped_column(
+    revenue_impact_usd: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
         comment="Estimated revenue loss in USD"
@@ -176,13 +176,13 @@ class Postmortem(Base, TimestampMixin):
     # === AI Hypothesis Evaluation ===
 
     # Was the AI hypothesis correct?
-    ai_hypothesis_correct: Mapped[Optional[bool]] = mapped_column(
+    ai_hypothesis_correct: Mapped[bool | None] = mapped_column(
         nullable=True,
         comment="Did the AI correctly identify the root cause?"
     )
 
     # AI hypothesis evaluation notes
-    ai_evaluation_notes: Mapped[Optional[str]] = mapped_column(
+    ai_evaluation_notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Feedback on AI performance for learning"
@@ -191,7 +191,7 @@ class Postmortem(Base, TimestampMixin):
     # === Metadata ===
 
     # Additional notes (free-form)
-    additional_notes: Mapped[Optional[str]] = mapped_column(
+    additional_notes: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Any other relevant information"
@@ -204,7 +204,7 @@ class Postmortem(Base, TimestampMixin):
     )
 
     # Publication date
-    published_at: Mapped[Optional[datetime]] = mapped_column(
+    published_at: Mapped[datetime | None] = mapped_column(
         nullable=True,
         comment="When this postmortem was published"
     )

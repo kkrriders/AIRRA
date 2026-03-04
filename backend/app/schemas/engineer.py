@@ -7,10 +7,9 @@ Senior Engineering Note:
 - ConfigDict for ORM integration
 """
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.engineer import EngineerStatus
 
@@ -24,7 +23,7 @@ class EngineerBase(BaseModel):
         default_factory=list,
         description="Areas of expertise (e.g., ['kubernetes', 'databases'])",
     )
-    department: Optional[str] = Field(None, max_length=100)
+    department: str | None = Field(None, max_length=100)
 
 
 class EngineerCreate(EngineerBase):
@@ -36,8 +35,8 @@ class EngineerCreate(EngineerBase):
         le=10,
         description="Maximum concurrent review assignments",
     )
-    slack_handle: Optional[str] = Field(None, max_length=100)
-    phone: Optional[str] = Field(None, max_length=50)
+    slack_handle: str | None = Field(None, max_length=100)
+    phone: str | None = Field(None, max_length=50)
     additional_info: dict = Field(
         default_factory=dict,
         description="Additional metadata (timezone, preferences, etc.)",
@@ -48,7 +47,7 @@ class EngineerCreate(EngineerBase):
     # (e.g. "alice-chen" vs "@alice-chen") and may silently deliver to the wrong handle.
     @field_validator("slack_handle")
     @classmethod
-    def normalize_slack_handle(cls, v: Optional[str]) -> Optional[str]:
+    def normalize_slack_handle(cls, v: str | None) -> str | None:
         if v is None:
             return v
         v = v.strip()
@@ -60,20 +59,20 @@ class EngineerCreate(EngineerBase):
 class EngineerUpdate(BaseModel):
     """Schema for updating an engineer."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    email: Optional[EmailStr] = None
-    expertise: Optional[list[str]] = None
-    department: Optional[str] = Field(None, max_length=100)
-    status: Optional[EngineerStatus] = None
-    is_available: Optional[bool] = None
-    max_concurrent_reviews: Optional[int] = Field(None, ge=1, le=10)
-    slack_handle: Optional[str] = Field(None, max_length=100)
-    phone: Optional[str] = Field(None, max_length=50)
-    additional_info: Optional[dict] = None
+    name: str | None = Field(None, min_length=1, max_length=255)
+    email: EmailStr | None = None
+    expertise: list[str] | None = None
+    department: str | None = Field(None, max_length=100)
+    status: EngineerStatus | None = None
+    is_available: bool | None = None
+    max_concurrent_reviews: int | None = Field(None, ge=1, le=10)
+    slack_handle: str | None = Field(None, max_length=100)
+    phone: str | None = Field(None, max_length=50)
+    additional_info: dict | None = None
 
     @field_validator("slack_handle")
     @classmethod
-    def normalize_slack_handle(cls, v: Optional[str]) -> Optional[str]:
+    def normalize_slack_handle(cls, v: str | None) -> str | None:
         if v is None:
             return v
         v = v.strip()
@@ -93,9 +92,9 @@ class EngineerResponse(EngineerBase):
     max_concurrent_reviews: int
     current_review_count: int
     total_reviews_completed: int
-    average_review_time_minutes: Optional[float] = None
-    slack_handle: Optional[str] = None
-    phone: Optional[str] = None
+    average_review_time_minutes: float | None = None
+    slack_handle: str | None = None
+    phone: str | None = None
     additional_info: dict
     created_at: datetime
     updated_at: datetime
@@ -134,7 +133,7 @@ class EngineerAvailability(BaseModel):
     current_review_count: int
     max_concurrent_reviews: int
     can_accept_review: bool
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         description="Reason if not available (e.g., 'At capacity', 'Offline')",
     )

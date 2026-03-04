@@ -1,6 +1,9 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from app.services.llm_client import LLMCache, LLMResponse, LLMClient
+
+from app.services.llm_client import LLMCache, LLMClient, LLMResponse
+
 
 @pytest.mark.asyncio
 async def test_llm_cache_key_generation():
@@ -8,7 +11,7 @@ async def test_llm_cache_key_generation():
     key1 = cache._generate_key("Hello world", "gpt-4", 0.5)
     key2 = cache._generate_key("Hello world", "gpt-4", 0.5)
     key3 = cache._generate_key("Hello world", "gpt-3.5", 0.5)
-    
+
     assert key1 == key2
     assert key1 != key3
     assert key1.startswith("llm_cache:")
@@ -52,7 +55,7 @@ async def test_llm_client_uses_cache():
                 total_tokens=20,
                 model="test-model"
             )
-        
+
         async def generate_structured(self, *args, **kwargs):
             pass
 
@@ -82,9 +85,9 @@ async def test_llm_client_uses_cache():
             total_tokens=10,
             model="test-model"
         ))
-        
+
         response = await client.generate("test prompt")
-        
+
         assert response.content == "Cached content"
         mock_cache.get.assert_called_once()
         mock_cache.set.assert_not_called()

@@ -1,49 +1,14 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
-
-interface ActionItem {
-  description: string;
-  owner: string;
-  due_date?: string;
-  priority: string;
-  status: string;
-}
-
-interface PostmortemData {
-  id: string;
-  incident_id: string;
-  actual_root_cause: string;
-  contributing_factors: string[];
-  detection_delay_reason?: string;
-  duration_minutes: number;
-  users_affected?: number;
-  revenue_impact_usd?: number;
-  what_went_well: string[];
-  what_went_wrong: string[];
-  lessons_learned: string[];
-  action_items: ActionItem[];
-  prevention_measures: string[];
-  detection_improvements: string[];
-  response_improvements: string[];
-  ai_hypothesis_correct?: boolean;
-  ai_evaluation_notes?: string;
-  additional_notes?: string;
-  published: boolean;
-  published_at?: string;
-  created_at: string;
-  updated_at: string;
-}
+import type { PostmortemResponse } from "@/lib/api";
 
 interface PostIncidentReviewDisplayProps {
-  postmortem: PostmortemData;
-  onEdit?: () => void;
+  postmortem: PostmortemResponse;
 }
 
 export default function PostIncidentReviewDisplay({
   postmortem,
-  onEdit,
 }: PostIncidentReviewDisplayProps) {
   const actionItemsCompleted = postmortem.action_items.filter(
     (item) => item.status === "completed"
@@ -64,11 +29,6 @@ export default function PostIncidentReviewDisplay({
             </p>
           )}
         </div>
-        {onEdit && (
-          <Button onClick={onEdit} variant="outline">
-            Edit PIR
-          </Button>
-        )}
       </div>
 
       {/* Impact Summary */}
@@ -201,7 +161,7 @@ export default function PostIncidentReviewDisplay({
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${priorityColors[item.priority as keyof typeof priorityColors]}`}>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${priorityColors[item.priority as keyof typeof priorityColors] ?? "bg-gray-100 text-gray-700"}`}>
                           {item.priority.toUpperCase()}
                         </span>
                         <span className={`px-2 py-1 rounded text-xs ${
@@ -279,7 +239,7 @@ export default function PostIncidentReviewDisplay({
       </section>
 
       {/* AI Evaluation */}
-      {(postmortem.ai_hypothesis_correct !== null || postmortem.ai_evaluation_notes) && (
+      {(postmortem.ai_hypothesis_correct != null || postmortem.ai_evaluation_notes) && (
         <section className="p-4 bg-purple-50 rounded-lg">
           <h3 className="font-semibold text-lg mb-3">🤖 AI Hypothesis Evaluation</h3>
 

@@ -27,7 +27,7 @@ def run_anomaly_check() -> dict:
         return asyncio.run(_anomaly_check())
     except Exception as e:
         logger.error(f"Anomaly check task failed: {e}", exc_info=True)
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "error": type(e).__name__}
 
 
 @celery_app.task(name="app.worker.tasks.monitoring.run_ai_generator")
@@ -42,7 +42,7 @@ def run_ai_generator() -> dict:
         return asyncio.run(_ai_generator())
     except Exception as e:
         logger.error(f"AI generator task failed: {e}", exc_info=True)
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "error": type(e).__name__}
 
 
 async def _anomaly_check() -> dict:

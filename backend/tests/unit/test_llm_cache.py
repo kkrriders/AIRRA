@@ -15,31 +15,30 @@ async def test_llm_cache_key_generation():
 
 @pytest.mark.asyncio
 async def test_llm_cache_hit_miss():
-    # Mock Redis
+    # LLMCache.get() calls get_redis() each time — patch at the module level,
+    # not via an instance attribute, so the mock is actually used.
     mock_redis = AsyncMock()
-    
-    # Setup cache with mocked redis
     cache = LLMCache()
-    cache._redis = mock_redis
-    
-    # Test Miss
-    mock_redis.get.return_value = None
-    result = await cache.get("prompt", "model", 0.1)
-    assert result is None
-    
-    # Test Hit
-    cached_response = LLMResponse(
-        content="Cached content",
-        prompt_tokens=10,
-        completion_tokens=5,
-        total_tokens=15,
-        model="model"
-    )
-    mock_redis.get.return_value = cached_response.model_dump_json()
-    
-    result = await cache.get("prompt", "model", 0.1)
-    assert result is not None
-    assert result.content == "Cached content"
+
+    with patch("app.services.llm_client.get_redis", return_value=mock_redis):
+        # Test Miss — Redis returns None
+        mock_redis.get.return_value = None
+        result = await cache.get("prompt", "model", 0.1)
+        assert result is None
+
+        # Test Hit — Redis returns serialised LLMResponse
+        cached_response = LLMResponse(
+            content="Cached content",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            model="model",
+        )
+        mock_redis.get.return_value = cached_response.model_dump_json()
+
+        result = await cache.get("prompt", "model", 0.1)
+        assert result is not None
+        assert result.content == "Cached content"
 
 @pytest.mark.asyncio
 async def test_llm_client_uses_cache():

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airra-frontend
+  namespace: airra
+  labels:
+    app: airra-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: airra-frontend
+  template:
+    metadata:
+      labels:
+        app: airra-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/YOUR_ORG/airra-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            # Points to the in-cluster backend Service
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://airra-backend.airra.svc.cluster.local"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

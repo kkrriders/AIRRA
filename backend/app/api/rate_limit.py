@@ -24,32 +24,12 @@ import time
 import uuid
 from collections import defaultdict
 
-import redis.asyncio as aioredis
 from fastapi import HTTPException, Request, status
 
 from app.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Shared Redis connection pool
-# Safe to lazily initialise here: FastAPI's event loop is single-threaded
-# (asyncio), so there is no thread-safety concern with the module-level global.
-# ---------------------------------------------------------------------------
-_redis_client: aioredis.Redis | None = None
-
-
-def _get_redis() -> aioredis.Redis:
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = aioredis.from_url(
-            str(settings.redis_url),
-            encoding="utf-8",
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-    return _redis_client
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +129,14 @@ class RateLimiter:
         )
 
     def _get_client_ip(self, request: Request) -> str:
-        # NOTE: X-Forwarded-For is taken at face value here. Any client behind
-        # a non-trusted proxy can spoof this header and appear as a different IP
-        # on every request, bypassing per-IP rate limits. In production, strip or
-        # validate this header at the ingress layer (nginx/Envoy trusted-proxy config)
-        # before it reaches the application.
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        # Only trust X-Forwarded-For when explicitly enabled via config.
+        # Default is False — use the direct TCP connection IP (request.client.host).
+        # Enable only when AIRRA is running behind a trusted reverse proxy that
+        # strips/validates the header before forwarding (nginx/Envoy trusted-proxy).
+        if settings.rate_limit_trust_x_forwarded_for:
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
     async def __call__(self, request: Request) -> None:
@@ -189,7 +169,7 @@ class RateLimiter:
         can interleave between the eviction, count, and conditional ZADD.
         Returns True if the request is within the allowed rate.
         """
-        redis_client = _get_redis()
+        redis_client = get_redis()
         key = f"ratelimit:{self.name}:{client_ip}"
         now = time.time()
         window_start = now - self.window_seconds

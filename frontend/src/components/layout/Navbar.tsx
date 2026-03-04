@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Activity, ListFilter, ShieldCheck, BarChart3 } from "lucide-react";
+import { Activity, ListFilter, ShieldCheck, BarChart3, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
@@ -13,6 +13,7 @@ export function Navbar() {
     { href: "/incidents", label: "Incidents", icon: ListFilter },
     { href: "/approvals", label: "Approvals", icon: ShieldCheck },
     { href: "/analytics", label: "Analytics", icon: BarChart3 },
+    { href: "/learning", label: "Learning", icon: BrainCircuit },
   ];
 
   return (
@@ -35,7 +36,7 @@ export function Navbar() {
             {navItems.map((item) => (
               <Link key={item.href} href={item.href}>
                 <Button 
-                  variant={pathname === item.href ? "secondary" : "ghost"} 
+                  variant={(item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)) ? "secondary" : "ghost"}
                   size="sm" 
                   className={cn(
                     "gap-2",
@@ -49,8 +50,6 @@ export function Navbar() {
             ))}
           </div>
 
-          <div className="flex items-center gap-4">
-          </div>
         </div>
       </div>
     </nav>

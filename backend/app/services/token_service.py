@@ -22,8 +22,15 @@ class TokenService:
 
     def __init__(self):
         """Initialize token service with secret key from settings."""
-        # Use API key as secret for token generation
-        self._secret = settings.api_key.get_secret_value().encode("utf-8")
+        # NEW-20 fix: use a dedicated notification_token_secret instead of the API key.
+        # This allows the API key to be rotated (e.g. rolling deployments) without
+        # invalidating in-flight acknowledgement tokens, which have a 1-hour window.
+        secret = settings.notification_token_secret.get_secret_value()
+        if not secret:
+            # Backwards-compatible fallback: if no dedicated secret is configured,
+            # use the API key (matches previous behaviour).
+            secret = settings.api_key.get_secret_value()
+        self._secret = secret.encode("utf-8")
 
     def generate_token(
         self,
@@ -115,8 +122,8 @@ class TokenService:
 
             return True, None
 
-        except Exception as e:
-            return False, f"Token validation error: {str(e)}"
+        except Exception:
+            return False, "Token validation failed"
 
     def generate_admin_panel_url(
         self,

@@ -24,13 +24,14 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, func, select
+from sqlalchemy import Integer, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import verify_api_key
 from app.database import get_db
 from app.models.incident import Incident, IncidentStatus, IncidentSeverity
 from app.models.notification import Notification
+from app.core.redis import get_redis
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,7 @@ async def get_cached_analytics(cache_key: str):
     Returns None if not cached or cache miss.
     """
     try:
-        from app.services.llm_client import llm_cache
-        cached = await llm_cache.redis_client.get(f"analytics:{cache_key}")
+        cached = await get_redis().get(f"analytics:{cache_key}")
         if cached:
             logger.info(f"Analytics cache HIT for key: {cache_key}")
             return json.loads(cached)
@@ -76,8 +76,7 @@ async def set_cached_analytics(cache_key: str, data: dict, ttl: int = ANALYTICS_
     Cache analytics result in Redis with TTL.
     """
     try:
-        from app.services.llm_client import llm_cache
-        await llm_cache.redis_client.setex(
+        await get_redis().setex(
             f"analytics:{cache_key}",
             ttl,
             json.dumps(data, default=str)  # default=str handles datetime serialization
@@ -271,7 +270,7 @@ async def get_analytics_summary(
     # 6. SLA compliance using SQL aggregation
     sla_compliance_stmt = select(
         func.count(Notification.id).label('total'),
-        func.sum(func.cast(Notification.sla_met, type_=func.Integer)).label('met')
+        func.sum(func.cast(Notification.sla_met, Integer)).label('met')
     ).where(
         and_(
             Notification.created_at >= start_date,
@@ -312,7 +311,7 @@ async def get_analytics_summary(
     service_sla_stmt = select(
         Incident.affected_service,
         func.count(Notification.id).label('total'),
-        func.sum(func.cast(Notification.sla_met, type_=func.Integer)).label('met')
+        func.sum(func.cast(Notification.sla_met, Integer)).label('met')
     ).join(
         Notification, Incident.id == Notification.incident_id
     ).where(
@@ -351,9 +350,13 @@ async def get_analytics_summary(
         ))
 
     # 10. Calculate daily trends using SQL GROUP BY date
-    # Use date_trunc to group by day
+    # NEW-17 fix: wrap detected_at in AT TIME ZONE 'UTC' before date_trunc so
+    # bucket boundaries are always UTC days regardless of the PostgreSQL server's
+    # timezone setting. Without this, a non-UTC server timezone causes the SQL
+    # day buckets to misalign with the Python-generated date strings below.
+    _day_bucket = func.date_trunc('day', func.timezone('UTC', Incident.detected_at))
     trends_stmt = select(
-        func.date_trunc('day', Incident.detected_at).label('day'),
+        _day_bucket.label('day'),
         func.count(Incident.id).label('total'),
         func.sum(func.case((Incident.severity == IncidentSeverity.CRITICAL, 1), else_=0)).label('critical'),
         func.sum(func.case((Incident.severity == IncidentSeverity.HIGH, 1), else_=0)).label('high'),
@@ -362,9 +365,9 @@ async def get_analytics_summary(
     ).where(
         Incident.detected_at >= start_date
     ).group_by(
-        func.date_trunc('day', Incident.detected_at)
+        _day_bucket
     ).order_by(
-        func.date_trunc('day', Incident.detected_at)
+        _day_bucket
     )
 
     trends_result = await db.execute(trends_stmt)
@@ -488,7 +491,7 @@ async def get_service_analytics(
     # Get SLA compliance using SQL aggregation
     sla_stmt = select(
         func.count(Notification.id).label('total'),
-        func.sum(func.cast(Notification.sla_met, type_=func.Integer)).label('met')
+        func.sum(func.cast(Notification.sla_met, Integer)).label('met')
     ).join(
         Incident, Incident.id == Notification.incident_id
     ).where(

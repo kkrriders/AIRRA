@@ -158,6 +158,8 @@ class Incident(Base, TimestampMixin):
         Index("idx_incident_status_severity", "status", "severity"),
         Index("idx_incident_detected_at", "detected_at"),
         Index("idx_incident_service_status", "affected_service", "status"),
+        # Composite index covers the common query pattern: WHERE detection_source = X AND status = Y
+        Index("idx_incident_detection_source_status", "detection_source", "status"),
     )
 
     def __repr__(self) -> str:

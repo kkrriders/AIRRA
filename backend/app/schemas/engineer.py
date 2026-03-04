@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, EmailStr
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
 
 from app.models.engineer import EngineerStatus
 
@@ -43,6 +43,19 @@ class EngineerCreate(EngineerBase):
         description="Additional metadata (timezone, preferences, etc.)",
     )
 
+    # NEW-25 fix: normalize slack_handle to a canonical format (@handle, lowercase).
+    # Without this, notification_service.py receives inconsistent formats
+    # (e.g. "alice-chen" vs "@alice-chen") and may silently deliver to the wrong handle.
+    @field_validator("slack_handle")
+    @classmethod
+    def normalize_slack_handle(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v.startswith("@"):
+            v = f"@{v}"
+        return v.lower()
+
 
 class EngineerUpdate(BaseModel):
     """Schema for updating an engineer."""
@@ -57,6 +70,16 @@ class EngineerUpdate(BaseModel):
     slack_handle: Optional[str] = Field(None, max_length=100)
     phone: Optional[str] = Field(None, max_length=50)
     additional_info: Optional[dict] = None
+
+    @field_validator("slack_handle")
+    @classmethod
+    def normalize_slack_handle(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v.startswith("@"):
+            v = f"@{v}"
+        return v.lower()
 
 
 class EngineerResponse(EngineerBase):

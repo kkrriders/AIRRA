@@ -87,9 +87,11 @@ export default function HomePage() {
   const stats = notificationStats || {};
   const onCall = onCallEngineers || [];
 
-  // Calculate open incidents
+  // Calculate open incidents (using actual backend statuses)
   const openIncidents =
-    recentIncidents.filter((i: any) => ['open', 'investigating'].includes(i.status)).length || 0;
+    recentIncidents.filter((i: any) =>
+      ['detected', 'analyzing', 'pending_approval', 'approved', 'executing'].includes(i.status)
+    ).length || 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -353,11 +355,14 @@ export default function HomePage() {
                   };
 
                   const statusColors = {
-                    open: 'bg-red-100 text-red-800',
-                    investigating: 'bg-yellow-100 text-yellow-800',
-                    mitigating: 'bg-blue-100 text-blue-800',
+                    detected: 'bg-red-100 text-red-800',
+                    analyzing: 'bg-yellow-100 text-yellow-800',
+                    pending_approval: 'bg-orange-100 text-orange-800',
+                    approved: 'bg-blue-100 text-blue-800',
+                    executing: 'bg-purple-100 text-purple-800',
                     resolved: 'bg-green-100 text-green-800',
-                    closed: 'bg-gray-100 text-gray-800',
+                    failed: 'bg-red-200 text-red-900',
+                    escalated: 'bg-gray-100 text-gray-800',
                   };
 
                   return (

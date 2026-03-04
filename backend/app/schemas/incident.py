@@ -40,11 +40,15 @@ class IncidentCreate(IncidentBase):
 
 
 class IncidentUpdate(BaseModel):
-    """Schema for updating an incident."""
+    """Schema for updating an incident.
+
+    I6 fix: `status` is intentionally excluded. All status transitions must go
+    through dedicated lifecycle endpoints (analyze, approve, reject, execute) to
+    enforce the PENDING_APPROVAL → APPROVED → EXECUTING → RESOLVED safety gate.
+    """
 
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, min_length=1)
-    status: Optional[IncidentStatus] = None
     severity: Optional[IncidentSeverity] = None
     resolved_at: Optional[datetime] = None
     resolution_time_seconds: Optional[int] = Field(None, ge=0)
@@ -61,6 +65,8 @@ class IncidentResponse(IncidentBase):
     detection_source: str
     resolved_at: Optional[datetime] = None
     resolution_time_seconds: Optional[int] = None
+    resolution_summary: Optional[str] = None
+    assigned_engineer_id: Optional[UUID] = None
     metrics_snapshot: dict
     context: dict
     created_at: datetime

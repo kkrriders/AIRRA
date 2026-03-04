@@ -78,12 +78,23 @@ async def approve_action(
     action.approved_at = datetime.now(timezone.utc)
     action.execution_mode = approval_data.execution_mode
 
-    # Update incident status
+    # Update incident status — only if still in PENDING_APPROVAL.
+    # I4 fix: a concurrent lifecycle manager may have already escalated the incident;
+    # approving an ESCALATED incident would silently reset that status, bypassing
+    # the escalation gate.
     stmt = select(Incident).where(Incident.id == action.incident_id)
     result = await db.execute(stmt)
     incident = result.scalar_one_or_none()
 
     if incident:
+        if incident.status != IncidentStatus.PENDING_APPROVAL:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Cannot approve action: incident is in '{incident.status.value}' status "
+                    "(expected 'pending_approval')"
+                ),
+            )
         incident.status = IncidentStatus.APPROVED
 
     await db.commit()
@@ -131,14 +142,19 @@ async def reject_action(
 
     # Update action
     action.status = ActionStatus.REJECTED
+    action.rejected_by = rejection_data.rejected_by
+    action.rejected_at = datetime.now(timezone.utc)
     action.rejection_reason = rejection_data.rejection_reason
 
-    # Update incident - escalate to human
+    # Update incident — escalate to human.
+    # NEW-5 fix: mirror the I4 status guard from approve_action. Only escalate
+    # if the incident is still in PENDING_APPROVAL; reject_action on an already-
+    # RESOLVED or FAILED incident must not silently overwrite that terminal status.
     stmt = select(Incident).where(Incident.id == action.incident_id)
     result = await db.execute(stmt)
     incident = result.scalar_one_or_none()
 
-    if incident:
+    if incident and incident.status == IncidentStatus.PENDING_APPROVAL:
         incident.status = IncidentStatus.ESCALATED
 
     await db.commit()

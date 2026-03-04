@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.core.perception.anomaly_detector import AnomalyDetection
 from app.services.dependency_graph import get_dependency_graph
+from app.services.learning_engine import get_learning_engine
 from app.services.llm_client import LLMClient, LLMResponse
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,7 @@ def calculate_hypothesis_confidence(
     hypothesis: HypothesisItemLLM,
     anomalies: list[AnomalyDetection],
     affected_service: Optional[str] = None,
+    pattern_adjustment: float = 0.0,
 ) -> float:
     """
     Calculate deterministic confidence score for a hypothesis.
@@ -206,7 +208,7 @@ def calculate_hypothesis_confidence(
     # Anomaly strength score
     if anomalies:
         avg_anomaly_confidence = sum(a.confidence for a in anomalies) / len(anomalies)
-        max_deviation = max((a.deviation_sigma for a in anomalies), default=0)
+        max_deviation = max(a.deviation_sigma for a in anomalies)
 
         # Normalize deviation (3 sigma = 0.5, 6 sigma = 1.0)
         deviation_score = min(1.0, max_deviation / 6.0)
@@ -222,33 +224,15 @@ def calculate_hypothesis_confidence(
         anomaly_score * 0.25
     )
 
-    # Service dependency boost (if topology information available)
-    dependency_boost = 0.0
-    if affected_service:
-        try:
-            # Extract service name from hypothesis (if mentioned)
-            # Check evidence for service labels
-            hypothesis_service = None
-            for evidence_item in hypothesis.evidence:
-                if "service" in evidence_item.signal_name.lower():
-                    # Try to extract service name from signal
-                    hypothesis_service = affected_service  # Simplified for now
-                    break
+    # TODO: topology-aware confidence boost — implement once SignalCorrelator
+    # provides cross-service dependency data. dep_graph.calculate_dependency_boost()
+    # exists but the condition (hypothesis_service != affected_service) was always
+    # False because hypothesis_service was incorrectly set to affected_service.
+    # Removed dead code to keep the formula honest.
 
-            # If we can identify the service causing the issue, apply dependency boost
-            if hypothesis_service and hypothesis_service != affected_service:
-                dep_graph = get_dependency_graph()
-                dependency_boost = dep_graph.calculate_dependency_boost(
-                    affected_service, hypothesis_service
-                )
-                logger.debug(
-                    f"Dependency boost for {hypothesis_service} -> {affected_service}: "
-                    f"{dependency_boost:+.2f}"
-                )
-        except Exception as e:
-            logger.debug(f"Failed to calculate dependency boost: {str(e)}")
-
-    final_confidence += dependency_boost
+    # Apply learned pattern adjustment from historical outcomes
+    # Positive when this service:category has resolved correctly before, negative otherwise
+    final_confidence += pattern_adjustment
 
     # Clamp to valid range
     return min(0.99, max(0.01, final_confidence))
@@ -270,6 +254,7 @@ class HypothesisGenerator:
         anomalies: list[AnomalyDetection],
         service_name: str,
         service_context: Optional[dict] = None,
+        past_context: Optional[list[dict]] = None,
     ) -> tuple[HypothesesResponse, LLMResponse]:
         """
         Generate hypotheses from detected anomalies.
@@ -286,7 +271,7 @@ class HypothesisGenerator:
             raise ValueError("No anomalies provided for hypothesis generation")
 
         # Build context-aware prompt
-        prompt = self._build_prompt(anomalies, service_name, service_context)
+        prompt = self._build_prompt(anomalies, service_name, service_context, past_context)
 
         # System prompt defines the role
         system_prompt = """You are an expert Site Reliability Engineer (SRE) with deep experience in incident response and root cause analysis.
@@ -314,12 +299,33 @@ Focus on generating insightful hypotheses. Confidence will be scored determinist
             )
 
             # Calculate deterministic confidence for each hypothesis
+            learning_engine = get_learning_engine()
+            # Warm L1 cache if empty — happens in Celery workers where the FastAPI
+            # lifespan startup (which calls load_patterns_from_db) never runs.
+            # IMPORTANT: safe only under the default Celery prefork pool where each
+            # worker has its own event loop (asyncio.run per task). Do NOT switch to
+            # gevent/eventlet without adding an asyncio.Lock around this block.
+            if not learning_engine.patterns:
+                await learning_engine.load_patterns_from_db()
             hypotheses_with_confidence = []
             for llm_hypothesis in llm_hypotheses.hypotheses:
+                # Fetch historical pattern adjustment (async, non-blocking)
+                pattern_adjustment = await learning_engine.get_confidence_adjustment(
+                    service=service_name,
+                    category=llm_hypothesis.category,
+                )
+                if pattern_adjustment != 0.0:
+                    logger.info(
+                        f"Pattern adjustment {pattern_adjustment:+.2f} applied to "
+                        f"'{llm_hypothesis.category}' hypothesis for {service_name} "
+                        f"(learned from historical outcomes)"
+                    )
+
                 confidence = calculate_hypothesis_confidence(
                     llm_hypothesis,
                     anomalies,
                     affected_service=service_name,
+                    pattern_adjustment=pattern_adjustment,
                 )
 
                 hypothesis = HypothesisItem(
@@ -356,6 +362,7 @@ Focus on generating insightful hypotheses. Confidence will be scored determinist
         anomalies: list[AnomalyDetection],
         service_name: str,
         service_context: Optional[dict] = None,
+        past_context: Optional[list[dict]] = None,
     ) -> str:
         """
         Build the prompt for hypothesis generation.
@@ -428,6 +435,23 @@ Anomaly #{i}:
                         # Capitalize first letter of key and replace underscores
                         formatted_key = key.replace("_", " ").title()
                         prompt_parts.append(f"**{formatted_key}:** {sanitized_value}")
+
+        # Add historical incident context (RAG-lite: past resolved incidents for same service)
+        if past_context:
+            prompt_parts.extend(["", "## Historical Context (Past Incidents — Same Service)", ""])
+            for i, past in enumerate(past_context, 1):
+                safe_title = sanitize_context_value(past.get("title", "Unknown"))
+                safe_cause = sanitize_context_value(past.get("root_cause", "Unknown"))
+                resolved_at = past.get("resolved_at", "")
+                prompt_parts.append(
+                    f"Past Incident #{i} ({resolved_at[:10] if resolved_at else 'unknown date'}): "
+                    f"{safe_title} — Root cause: {safe_cause}"
+                )
+            prompt_parts.append("")
+            prompt_parts.append(
+                "Use this history to inform your hypotheses. If a pattern recurs, "
+                "flag it explicitly."
+            )
 
         # Add task instruction
         prompt_parts.extend(

@@ -66,7 +66,7 @@ async def get_incident_timeline(
 
     return IncidentTimeline(
         incident_id=incident_id,
-        events=[TimelineEvent.from_orm(e) for e in events],
+        events=[TimelineEvent.model_validate(e) for e in events],
         total_events=len(events),
         duration_minutes=duration_minutes,
     )
@@ -113,7 +113,7 @@ async def create_postmortem(
 
     logger.info(f"Postmortem created for incident {data.incident_id}")
 
-    return PostmortemResponse.from_orm(postmortem)
+    return PostmortemResponse.model_validate(postmortem)
 
 
 @router.get("/postmortems/{postmortem_id}", response_model=PostmortemResponse)
@@ -127,7 +127,7 @@ async def get_postmortem(
     if not postmortem:
         raise HTTPException(status_code=404, detail="Postmortem not found")
 
-    return PostmortemResponse.from_orm(postmortem)
+    return PostmortemResponse.model_validate(postmortem)
 
 
 @router.get("/incidents/{incident_id}/postmortem", response_model=PostmortemResponse)
@@ -146,7 +146,7 @@ async def get_postmortem_by_incident(
             detail="No postmortem found for this incident"
         )
 
-    return PostmortemResponse.from_orm(postmortem)
+    return PostmortemResponse.model_validate(postmortem)
 
 
 @router.patch("/postmortems/{postmortem_id}", response_model=PostmortemResponse)
@@ -168,6 +168,9 @@ async def update_postmortem(
     if "published" in update_data and update_data["published"] and not postmortem.published:
         update_data["published_at"] = datetime.now(timezone.utc)
 
+    # JSON columns (action_items, contributing_factors, etc.) use full replacement
+    # semantics — never mutate in-place. setattr() triggers object-identity tracking
+    # by SQLAlchemy, which is correct here since model_dump() always produces new objects.
     for key, value in update_data.items():
         setattr(postmortem, key, value)
 
@@ -176,7 +179,7 @@ async def update_postmortem(
 
     logger.info(f"Postmortem {postmortem_id} updated")
 
-    return PostmortemResponse.from_orm(postmortem)
+    return PostmortemResponse.model_validate(postmortem)
 
 
 @router.delete("/postmortems/{postmortem_id}", status_code=204)
@@ -208,11 +211,11 @@ async def list_postmortems(
     stmt = select(Postmortem).order_by(Postmortem.created_at.desc())
 
     if published_only:
-        stmt = stmt.where(Postmortem.published == True)
+        stmt = stmt.where(Postmortem.published == True)  # noqa: E712
 
     stmt = stmt.limit(limit).offset(offset)
 
     result = await db.execute(stmt)
     postmortems = result.scalars().all()
 
-    return [PostmortemResponse.from_orm(p) for p in postmortems]
+    return [PostmortemResponse.model_validate(p) for p in postmortems]

@@ -109,19 +109,24 @@ class LearningEngine:
                     action = result.scalar_one_or_none()
 
                     if action:
-                        # Record action effectiveness
-                        action.execution_result = action.execution_result or {}
-                        action.execution_result["effective"] = outcome.action_effective
-                        action.execution_result["resolution_notes"] = outcome.resolution_notes
+                        # Record action effectiveness — full reassignment so SQLAlchemy
+                        # detects the change even without MutableDict tracking (I1 fix).
+                        action.execution_result = {
+                            **(action.execution_result or {}),
+                            "effective": outcome.action_effective,
+                            "resolution_notes": outcome.resolution_notes,
+                        }
 
-                # Update incident context with learning metadata
-                incident.context = incident.context or {}
-                incident.context["learning"] = {
-                    "hypothesis_correct": outcome.hypothesis_correct,
-                    "action_effective": outcome.action_effective,
-                    "human_override": outcome.human_override,
-                    "override_reason": outcome.override_reason,
-                    "captured_at": datetime.now(timezone.utc).isoformat(),
+                # Update incident context with learning metadata — full reassignment (I1 fix).
+                incident.context = {
+                    **(incident.context or {}),
+                    "learning": {
+                        "hypothesis_correct": outcome.hypothesis_correct,
+                        "action_effective": outcome.action_effective,
+                        "human_override": outcome.human_override,
+                        "override_reason": outcome.override_reason,
+                        "captured_at": datetime.now(timezone.utc).isoformat(),
+                    },
                 }
 
                 await db.commit()
@@ -195,6 +200,19 @@ class LearningEngine:
             db_pattern.occurrence_count = new_count
             db_pattern.success_rate = new_success_rate
             db_pattern.confidence_adjustment = new_confidence
+
+            # NEW-3 fix: keep L1 in-memory cache in sync with the DB update so
+            # subsequent get_pattern() calls within the same process see the new
+            # values without waiting for the next load_patterns_from_db() restart.
+            self.patterns[pattern_id] = PatternSignature(
+                pattern_id=pattern_id,
+                name=db_pattern.name,
+                category=db_pattern.category,
+                signal_indicators=db_pattern.signal_indicators or [],
+                confidence_adjustment=new_confidence,
+                occurrence_count=new_count,
+                success_rate=new_success_rate,
+            )
 
             logger.info(
                 f"Updated pattern {pattern_id}: "
@@ -361,17 +379,28 @@ class LearningEngine:
                 result = await db.execute(stmt)
                 avg_resolution_time = result.scalar_one() or 0
 
-                # Count validated hypotheses
+                # Count validated hypotheses within the same time window so
+                # accuracy is consistent with resolution_rate and not dragged
+                # down by old data from before the system was tuned.
                 stmt = (
                     select(func.count())
                     .select_from(Hypothesis)
-                    .where(Hypothesis.validated == True)  # noqa: E712
+                    .join(Incident, Hypothesis.incident_id == Incident.id)
+                    .where(
+                        Hypothesis.validated == True,  # noqa: E712
+                        Incident.detected_at >= since,
+                    )
                 )
                 result = await db.execute(stmt)
                 correct_hypotheses = result.scalar_one()
 
-                # Count total hypotheses
-                stmt = select(func.count()).select_from(Hypothesis)
+                # Count total hypotheses within the time window
+                stmt = (
+                    select(func.count())
+                    .select_from(Hypothesis)
+                    .join(Incident, Hypothesis.incident_id == Incident.id)
+                    .where(Incident.detected_at >= since)
+                )
                 result = await db.execute(stmt)
                 total_hypotheses = result.scalar_one()
 

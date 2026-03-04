@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airra
+  labels:
+    app.kubernetes.io/name: airra
+    app.kubernetes.io/managed-by: kubectl

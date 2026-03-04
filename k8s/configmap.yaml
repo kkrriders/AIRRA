@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airra-config
+  namespace: airra
+data:
+  AIRRA_ENVIRONMENT: "production"
+  AIRRA_LOG_LEVEL: "INFO"
+  AIRRA_DEBUG: "false"
+  AIRRA_LLM_PROVIDER: "groq"
+  AIRRA_LLM_MODEL: "llama-3.3-70b-versatile"
+  AIRRA_LLM_GENERATOR_MODEL: "llama-3.1-8b-instant"
+
+  # Point to your managed Prometheus (or in-cluster kube-prometheus-stack)
+  AIRRA_PROMETHEUS_URL: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+
+  # Replace with your managed PostgreSQL and Redis endpoints.
+  # In production, prefer injecting these via a sealed secret or external-secrets operator.
+  AIRRA_DATABASE_URL: "postgresql+asyncpg://airra:CHANGE_ME@postgres-host:5432/airra"
+  AIRRA_REDIS_URL: "redis://redis-host:6379/0"

@@ -77,7 +77,7 @@ class TestIncidentsAPI:
         assert all(inc["affected_service"] == "service-0" for inc in data["items"])
 
     async def test_update_incident(self, api_client, sample_incident, incident_update_payload):
-        """Test PATCH /api/v1/incidents/{id} updates incident."""
+        """Test PATCH /api/v1/incidents/{id} updates mutable fields."""
         response = await api_client.patch(
             f"/api/v1/incidents/{sample_incident.id}",
             json=incident_update_payload
@@ -85,39 +85,34 @@ class TestIncidentsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == incident_update_payload["status"]
+        assert data["title"] == incident_update_payload["title"]
+        assert data["severity"] == incident_update_payload["severity"]
 
-    async def test_analyze_incident(self, api_client, sample_incident, mock_llm_client,
-                                   anomalous_metric_data, mock_prometheus_client):
-        """Test POST /api/v1/incidents/{id}/analyze triggers analysis."""
-        mock_prometheus_client.get_service_metrics.return_value = anomalous_metric_data
-
+    async def test_analyze_incident(self, api_client, sample_incident):
+        """Test POST /api/v1/incidents/{id}/analyze returns 202 and enqueues task."""
         response = await api_client.post(f"/api/v1/incidents/{sample_incident.id}/analyze")
 
-        assert response.status_code == 200
+        assert response.status_code == 202
         data = response.json()
-        assert "hypotheses_generated" in data or "status" in data
+        assert data["status"] == "accepted"
+        assert data["incident_id"] == str(sample_incident.id)
+        assert "poll" in data
 
-    async def test_analyze_creates_hypotheses(self, api_client, sample_incident,
-                                             mock_llm_client, anomalous_metric_data, mock_prometheus_client):
-        """Test analysis creates hypothesis records."""
-        mock_prometheus_client.get_service_metrics.return_value = anomalous_metric_data
-        response = await api_client.post(f"/api/v1/incidents/{sample_incident.id}/analyze")
+    async def test_analyze_transitions_to_analyzing(self, api_client, sample_incident):
+        """Test that /analyze immediately transitions incident to ANALYZING status."""
+        await api_client.post(f"/api/v1/incidents/{sample_incident.id}/analyze")
 
-        # Get incident with relations
         get_response = await api_client.get(f"/api/v1/incidents/{sample_incident.id}")
         data = get_response.json()
 
-        assert len(data.get("hypotheses", [])) > 0
+        # Status transitions to ANALYZING synchronously; worker completes async
+        assert data["status"] == "analyzing"
 
-    async def test_analyze_with_no_anomalies(self, api_client, sample_incident,
-                                            normal_metric_data, mock_prometheus_client):
-        """Test analysis with normal metrics."""
-        mock_prometheus_client.get_service_metrics.return_value = normal_metric_data
-
+    async def test_analyze_with_no_anomalies(self, api_client, sample_incident):
+        """Test analyze accepts any DETECTED incident regardless of metrics."""
         response = await api_client.post(f"/api/v1/incidents/{sample_incident.id}/analyze")
 
-        assert response.status_code == 200
+        assert response.status_code == 202
 
     async def test_analyze_wrong_status_returns_400(self, api_client, test_db, incident_factory):
         """Test analyze requires DETECTED status."""

@@ -30,7 +30,9 @@
       "Bash(docker-compose restart:*)",
       "Bash(ls:*)",
       "Bash(rm:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(sed:*)"
     ]
   },
   "outputStyle": "Explanatory"

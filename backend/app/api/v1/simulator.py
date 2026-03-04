@@ -144,7 +144,7 @@ async def list_available_scenarios(
         logger.error(f"Failed to list scenarios: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to list scenarios: {str(e)}",
+            detail="Failed to list scenarios",
         )
 
 
@@ -210,7 +210,7 @@ async def get_scenario_details(scenario_id: str):
         logger.error(f"Failed to get scenario details: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get scenario details: {str(e)}",
+            detail="Failed to get scenario details",
         )
 
 
@@ -301,7 +301,7 @@ async def start_scenario_simulation(
         logger.error(f"Failed to start simulation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to start simulation: {str(e)}",
+            detail="Failed to start simulation",
         )
 
 
@@ -339,16 +339,16 @@ async def stop_simulation(simulation_id: str):
             "details": result,
         }
 
-    except ValueError as e:
+    except ValueError:
         raise HTTPException(
             status_code=404,
-            detail=str(e),
+            detail=f"Simulation not found: {simulation_id}",
         )
     except Exception as e:
         logger.error(f"Failed to stop simulation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to stop simulation: {str(e)}",
+            detail="Failed to stop simulation",
         )
 
 
@@ -398,7 +398,7 @@ async def get_simulation_status(simulation_id: str):
         logger.error(f"Failed to get simulation status: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get simulation status: {str(e)}",
+            detail="Failed to get simulation status",
         )
 
 
@@ -445,5 +445,5 @@ async def list_active_simulations():
         logger.error(f"Failed to list simulations: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to list simulations: {str(e)}",
+            detail="Failed to list simulations",
         )

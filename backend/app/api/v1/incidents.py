@@ -4,12 +4,13 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.models.incident import Incident, IncidentStatus
+from app.models.incident import Incident, IncidentSeverity, IncidentStatus
+from app.models.incident_event import IncidentEvent, IncidentEventType
 from app.schemas.incident import (
     IncidentCreate,
     IncidentFilter,
@@ -130,7 +131,6 @@ async def list_incidents(
     if status:
         stmt = stmt.where(Incident.status == status)
     if severity:
-        from app.models.incident import IncidentSeverity
         try:
             severity_enum = IncidentSeverity(severity.lower())
             stmt = stmt.where(Incident.severity == severity_enum)
@@ -144,9 +144,9 @@ async def list_incidents(
     if assigned_engineer_id:
         stmt = stmt.where(Incident.assigned_engineer_id == assigned_engineer_id)
     if search:
-        # Case-insensitive search in title and description
-        search_pattern = f"%{search}%"
-        from sqlalchemy import or_
+        # Escape SQL wildcard characters to prevent pattern injection
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_pattern = f"%{escaped}%"
         stmt = stmt.where(
             or_(
                 Incident.title.ilike(search_pattern),
@@ -251,10 +251,12 @@ async def analyze_incident(
     await db.commit()
 
     # Enqueue analysis to Celery worker — returns instantly.
-    # send_task() dispatches by registered task name string rather than importing
-    # the task module, so the API process has no import-time dependency on the
-    # worker package. Routed to the dedicated 'analysis' queue (I2 + S2 fix).
-    from app.worker.celery_app import celery_app
+    # NEW-8: the import is intentionally deferred here. The API container does not
+    # have a hard dependency on the Celery worker package at startup; deferring the
+    # import means import failures in the worker package don't crash the API process.
+    # send_task() dispatches by registered task name string, keeping the packages
+    # loosely coupled. This trade-off is deliberate — do not move to module level.
+    from app.worker.celery_app import celery_app  # noqa: PLC0415
     celery_app.send_task(
         "app.worker.tasks.analysis.analyze_incident",
         args=[str(incident_id)],
@@ -451,8 +453,6 @@ async def get_incident_assignment(
         raise HTTPException(status_code=404, detail="Incident not found")
 
     # Find assignment event for timestamp
-    from app.models.incident_event import IncidentEvent, IncidentEventType
-
     stmt_event = (
         select(IncidentEvent)
         .where(

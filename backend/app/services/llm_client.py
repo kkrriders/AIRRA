@@ -11,12 +11,13 @@ import hashlib
 import json
 import logging
 import re
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Type, TypeVar
 
-import redis.asyncio as redis
 from anthropic import Anthropic, AsyncAnthropic
 from openai import AsyncOpenAI, OpenAI
+from prometheus_client import Counter, Histogram
 from pydantic import BaseModel
 from tenacity import (
     retry,
@@ -26,8 +27,33 @@ from tenacity import (
 )
 
 from app.config import settings
+from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# LLM observability metrics (Item 7)
+# Defined at module level so the prometheus_client registry deduplicates them
+# correctly across multiple imports.
+# ---------------------------------------------------------------------------
+_LLM_LATENCY = Histogram(
+    "llm_call_duration_seconds",
+    "LLM API call latency in seconds",
+    ["provider", "model", "cached"],
+    buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
+_LLM_TOKENS = Counter(
+    "llm_tokens_total",
+    "Total LLM tokens consumed",
+    ["provider", "model", "token_type"],
+)
+
+_LLM_ERRORS = Counter(
+    "llm_errors_total",
+    "Total LLM API call errors",
+    ["provider", "model"],
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -36,21 +62,69 @@ T = TypeVar("T", bound=BaseModel)
 _CODE_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
 
+def _extract_first_json_object(text: str) -> str | None:
+    """
+    Extract the first complete JSON object from text using bracket counting.
+
+    Handles preamble text before the JSON and trailing text after it.
+    Correctly handles arbitrarily nested objects — greedy regex cannot do this
+    because `{.*}` with DOTALL grabs from the first `{` to the *last* `}`,
+    mangling nested structures and any JSON that appears after the first object.
+    """
+    depth = 0
+    start: int | None = None
+    in_string = False
+    escape_next = False
+
+    for i, ch in enumerate(text):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                return text[start : i + 1]
+
+    return None
+
+
 def extract_json_from_llm_response(content: str) -> str:
     """
-    Extract JSON from an LLM response that may be wrapped in markdown code blocks.
+    Extract JSON from an LLM response that may be wrapped in markdown code blocks
+    or preceded by preamble text.
 
-    Handles:
-    - ```json { ... } ```
-    - ``` { ... } ```
-    - Bare JSON with no code block
-    - Multiple code blocks (takes the first one)
+    Handles (in priority order):
+    1. ```json { ... } ``` — markdown JSON code block
+    2. ``` { ... } ```    — generic code block
+    3. Bare JSON with preamble (e.g. "Here is the JSON:\n{...}")
+    4. Raw JSON with no surrounding text
     """
     content = content.strip()
+
+    # Priority 1 & 2: extract from markdown code block
     match = _CODE_BLOCK_RE.search(content)
     if match:
         return match.group(1).strip()
-    # No code block found — assume the content is raw JSON
+
+    # Priority 3 & 4: find the first complete JSON object via bracket counting.
+    # This handles "Here is the output:\n{...}" and plain "{...}" equally.
+    extracted = _extract_first_json_object(content)
+    if extracted:
+        return extracted
+
+    # Last resort — return as-is and let the caller's JSON parser report the error
     return content
 
 
@@ -65,40 +139,26 @@ class LLMResponse(BaseModel):
 
 
 class LLMCache:
-    """Redis-based semantic cache for LLM responses."""
+    """Redis-backed semantic cache for LLM responses.
 
-    def __init__(self):
-        self._redis: redis.Redis | None = None
-
-    async def get_redis(self) -> redis.Redis:
-        if self._redis is None:
-            self._redis = redis.from_url(str(settings.redis_url), encoding="utf-8", decode_responses=True)
-        return self._redis
-
-    async def close(self):
-        """Close the Redis connection and release resources."""
-        if self._redis is not None:
-            await self._redis.aclose()
-            self._redis = None
-            logger.info("LLM cache Redis connection closed")
+    Uses the application-wide shared Redis pool from app.core.redis so no
+    separate connection pool is created per feature. The pool lifecycle
+    (connect / close) is managed entirely by main.py lifespan.
+    """
 
     def _generate_key(self, prompt: str, model: str, temperature: float) -> str:
         """Generate a deterministic cache key."""
-        # Normalize inputs
         key_content = f"{model}:{temperature}:{prompt.strip()}"
         return f"llm_cache:{hashlib.sha256(key_content.encode()).hexdigest()}"
 
     async def get(self, prompt: str, model: str, temperature: float) -> LLMResponse | None:
         """Retrieve cached response if available."""
         try:
-            r = await self.get_redis()
             key = self._generate_key(prompt, model, temperature)
-            cached_json = await r.get(key)
-            
+            cached_json = await get_redis().get(key)
             if cached_json:
                 logger.info(f"LLM Cache Hit: {key}")
-                data = json.loads(cached_json)
-                return LLMResponse(**data)
+                return LLMResponse(**json.loads(cached_json))
             return None
         except Exception as e:
             logger.warning(f"LLM Cache read error: {e}")
@@ -107,11 +167,8 @@ class LLMCache:
     async def set(self, prompt: str, model: str, temperature: float, response: LLMResponse):
         """Cache response with TTL."""
         try:
-            r = await self.get_redis()
             key = self._generate_key(prompt, model, temperature)
-            # Use configurated TTL or default to 24 hours (86400 seconds)
-            ttl = getattr(settings, "llm_cache_ttl", 86400)
-            await r.setex(key, ttl, response.model_dump_json())
+            await get_redis().setex(key, settings.redis_cache_ttl, response.model_dump_json())
         except Exception as e:
             logger.warning(f"LLM Cache write error: {e}")
 
@@ -134,31 +191,56 @@ class LLMClient(ABC):
         """Internal method to generate text completion without cache."""
         pass
 
+    # NEW-15: skip cache for high-temperature (creative) calls. At temp > 0.5 the
+    # caller explicitly wants non-deterministic output; caching would return the
+    # same response every time, defeating the purpose (e.g. AI incident generator).
+    _HIGH_TEMP_CACHE_THRESHOLD = 0.5
+
     async def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        use_cache: bool = True,
     ) -> LLMResponse:
-        """Generate text completion with caching."""
+        """Generate text completion with caching and Prometheus instrumentation."""
         # Resolve defaults
         temp = temperature if temperature is not None else self.temperature
-        
-        # Try cache first (only if no system prompt for now, or include system prompt in key)
-        # Note: We'll include system prompt in the key by appending it to the prompt for hashing
+
+        # Include system prompt in cache key so different system prompts don't collide
         cache_prompt_key = f"{system_prompt or ''}::{prompt}"
-        
-        cached = await llm_cache.get(cache_prompt_key, self.model, temp)
-        if cached:
-            return cached
 
-        # Generate fresh
-        response = await self._generate_raw(prompt, system_prompt, temperature, max_tokens)
+        # Skip cache for high-temperature creative calls (temp > 0.5)
+        should_cache = use_cache and temp <= self._HIGH_TEMP_CACHE_THRESHOLD
 
-        # Cache result
-        await llm_cache.set(cache_prompt_key, self.model, temp, response)
-        
+        # Derive a short provider name from the concrete class name for labels
+        provider = type(self).__name__.replace("Client", "").lower()
+
+        if should_cache:
+            cached = await llm_cache.get(cache_prompt_key, self.model, temp)
+            if cached:
+                _LLM_LATENCY.labels(provider=provider, model=self.model, cached="true").observe(0)
+                _LLM_TOKENS.labels(provider=provider, model=self.model, token_type="prompt").inc(cached.prompt_tokens)
+                _LLM_TOKENS.labels(provider=provider, model=self.model, token_type="completion").inc(cached.completion_tokens)
+                return cached
+
+        # Generate fresh and measure wall-clock latency
+        t0 = time.perf_counter()
+        try:
+            response = await self._generate_raw(prompt, system_prompt, temperature, max_tokens)
+        except Exception:
+            _LLM_ERRORS.labels(provider=provider, model=self.model).inc()
+            raise
+        elapsed = time.perf_counter() - t0
+
+        _LLM_LATENCY.labels(provider=provider, model=self.model, cached="false").observe(elapsed)
+        _LLM_TOKENS.labels(provider=provider, model=self.model, token_type="prompt").inc(response.prompt_tokens)
+        _LLM_TOKENS.labels(provider=provider, model=self.model, token_type="completion").inc(response.completion_tokens)
+
+        if should_cache:
+            await llm_cache.set(cache_prompt_key, self.model, temp, response)
+
         return response
 
     @abstractmethod
@@ -204,10 +286,13 @@ class AnthropicClient(LLMClient):
         try:
             messages = [{"role": "user", "content": prompt}]
 
+            # NEW-18 fix: use explicit None check — `temperature or self.temperature`
+            # treats 0.0 (fully deterministic) as falsy and falls back to default.
+            effective_temp = temperature if temperature is not None else self.temperature
             response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
-                temperature=temperature or self.temperature,
+                temperature=effective_temp,
                 system=system_prompt or "",
                 messages=messages,
             )
@@ -310,10 +395,12 @@ class OpenAIClient(LLMClient):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            # NEW-18 fix: explicit None check — 0.0 is falsy in Python.
+            effective_temp = temperature if temperature is not None else self.temperature
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=temperature or self.temperature,
+                temperature=effective_temp,
                 max_tokens=max_tokens or self.max_tokens,
             )
 
@@ -383,69 +470,67 @@ class OpenRouterClient(OpenAIClient):
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
-
-    async def generate(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-    ) -> LLMResponse:
-        """Generate text completion with OpenRouter."""
-        # We can add OpenRouter specific headers if needed
-        # extra_headers={
-        #     "HTTP-Referer": "https://airra.ai",
-        #     "X-Title": "AIRRA",
-        # }
-        return await super().generate(prompt, system_prompt, temperature, max_tokens)
+    # NEW-30 fix: removed dead generate() override that only called super().generate().
+    # If OpenRouter-specific headers are needed in the future (e.g. HTTP-Referer),
+    # override _generate_raw() instead — that's the correct extension point.
 
 
-def get_llm_client() -> LLMClient:
+def get_llm_client(model: str | None = None) -> LLMClient:
     """
     Factory function to get the configured LLM client.
 
-    Returns the appropriate client based on settings.
+    Args:
+        model: Optional model override. If None, uses settings.llm_model.
+               Pass settings.llm_generator_model to get a generator-specific
+               client without mutating the returned instance (NEW-10 fix).
 
     Supported providers:
     - anthropic: Claude models (paid)
-    - openai: GPT models (paid) or Groq (free, use openai provider)
+    - openai: GPT models (paid) or Groq keys (gsk_... auto-detected)
     - openrouter: Access to multiple models including free options
-    - groq: Fast inference with Llama/Mixtral (free)
+    - groq: Fast inference with Llama/Mixtral (free tier available)
     """
+    effective_model = model or settings.llm_model
+
     if settings.llm_provider == "anthropic":
         if not settings.anthropic_api_key.get_secret_value():
-            raise ValueError("ANTHROPIC_API_KEY not configured")
+            raise ValueError("ANTHROPIC_API_KEY not configured (set AIRRA_ANTHROPIC_API_KEY)")
         return AnthropicClient(
             api_key=settings.anthropic_api_key.get_secret_value(),
-            model=settings.llm_model,
+            model=effective_model,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
     elif settings.llm_provider == "openai":
         if not settings.openai_api_key.get_secret_value():
-            raise ValueError("OPENAI_API_KEY not configured")
+            raise ValueError("OPENAI_API_KEY not configured (set AIRRA_OPENAI_API_KEY)")
         return OpenAIClient(
             api_key=settings.openai_api_key.get_secret_value(),
-            model=settings.llm_model,
+            model=effective_model,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
     elif settings.llm_provider == "groq":
-        if not settings.openai_api_key.get_secret_value():
-            raise ValueError("GROQ_API_KEY not configured (use AIRRA_OPENAI_API_KEY)")
-        # Groq uses OpenAI-compatible API
+        # NEW-14 fix: prefer the dedicated groq_api_key; fall back to openai_api_key
+        # for backwards compatibility with deployments using the legacy env var.
+        groq_key = settings.groq_api_key.get_secret_value() or settings.openai_api_key.get_secret_value()
+        if not groq_key:
+            raise ValueError(
+                "Groq API key not configured. Set AIRRA_GROQ_API_KEY "
+                "(or AIRRA_OPENAI_API_KEY for legacy compatibility)."
+            )
         return OpenAIClient(
-            api_key=settings.openai_api_key.get_secret_value(),
-            model=settings.llm_model,
+            api_key=groq_key,
+            model=effective_model,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )
     elif settings.llm_provider == "openrouter":
         if not settings.openrouter_api_key.get_secret_value():
-            raise ValueError("OPENROUTER_API_KEY not configured")
+            raise ValueError("OPENROUTER_API_KEY not configured (set AIRRA_OPENROUTER_API_KEY)")
         return OpenRouterClient(
             api_key=settings.openrouter_api_key.get_secret_value(),
-            model=settings.llm_model,
+            model=effective_model,
             temperature=settings.llm_temperature,
             max_tokens=settings.llm_max_tokens,
         )

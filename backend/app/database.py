@@ -96,6 +96,10 @@ async def init_db() -> None:
     from app.models.engineer import Engineer  # noqa: F401
     from app.models.engineer_review import EngineerReview  # noqa: F401
     from app.models.incident_pattern import IncidentPattern  # noqa: F401
+    from app.models.notification import Notification  # noqa: F401
+    from app.models.on_call_schedule import OnCallSchedule  # noqa: F401
+    from app.models.postmortem import Postmortem  # noqa: F401
+    from app.models.incident_event import IncidentEvent  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

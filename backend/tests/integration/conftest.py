@@ -6,9 +6,9 @@ This module provides fixtures for testing FastAPI endpoints with:
 - Test database with realistic data
 - HTTP client with proper dependency injection
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, MagicMock, patch
 from uuid import UUID
 
 import pytest
@@ -63,15 +63,23 @@ async def api_client(
         yield test_db
 
     from app.api.rate_limit import llm_rate_limit
+    from app.api.dependencies import verify_api_key
+
     async def override_rate_limit():
         pass
 
+    async def override_verify_api_key():
+        return "dev-test-key-12345"
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[llm_rate_limit] = override_rate_limit
+    app.dependency_overrides[verify_api_key] = override_verify_api_key
 
-    # Mock service singletons where they are imported
-    with patch("app.api.v1.incidents.get_llm_client", return_value=mock_llm_client), \
-         patch("app.api.v1.incidents.get_prometheus_client", return_value=mock_prometheus_client), \
+    # Mock service singletons where they are imported.
+    # incidents.py no longer imports get_llm_client / get_prometheus_client directly —
+    # after the Celery refactor, /analyze enqueues a task via celery_app.send_task().
+    # We mock send_task so integration tests don't require a running broker.
+    with patch("app.worker.celery_app.celery_app.send_task", return_value=MagicMock(id="test-task-id")), \
          patch("app.api.v1.quick_incident.get_llm_client", return_value=mock_llm_client), \
          patch("app.api.v1.quick_incident.get_prometheus_client", return_value=mock_prometheus_client):
         
@@ -102,7 +110,7 @@ def incident_create_payload():
         "severity": "high",
         "affected_service": "payment-service",
         "affected_components": ["payment-processor", "transaction-handler"],
-        "detected_at": datetime.utcnow().isoformat(),
+        "detected_at": datetime.now(timezone.utc).isoformat(),
         "detection_source": "prometheus",
         "metrics_snapshot": {
             "cpu_usage": 95.0,
@@ -120,13 +128,14 @@ def incident_create_payload():
 def incident_update_payload():
     """
     Valid payload for updating an incident.
+
+    Note: status is intentionally excluded from IncidentUpdate — all status
+    transitions must go through dedicated lifecycle endpoints (analyze, approve,
+    etc.) to enforce the safety gate. Only mutable fields are sent here.
     """
     return {
-        "status": "analyzing",
-        "context": {
-            "investigation_notes": "Root cause identified",
-            "updated_at": datetime.utcnow().isoformat(),
-        },
+        "title": "Updated Incident Title",
+        "severity": "critical",
     }
 
 
@@ -247,7 +256,7 @@ async def approved_action(test_db: AsyncSession, incident_factory, action_factor
         status=ActionStatus.APPROVED,
         execution_mode="dry_run",
         approved_by="test-operator@example.com",
-        approved_at=datetime.utcnow(),
+        approved_at=datetime.now(timezone.utc),
     )
 
     return action
@@ -354,7 +363,7 @@ async def resolved_incident_with_outcome(
     incident = await incident_factory(
         title="Resolved Incident",
         status=IncidentStatus.RESOLVED,
-        resolved_at=datetime.utcnow(),
+        resolved_at=datetime.now(timezone.utc),
         resolution_time_seconds=720,  # 12 minutes
     )
 
@@ -553,7 +562,7 @@ async def multiple_incidents(
             severity=severity,
             status=status,
             affected_service=service,
-            detected_at=datetime.utcnow() - timedelta(hours=i),
+            detected_at=datetime.now(timezone.utc) - timedelta(hours=i),
         )
         incidents.append(incident)
 

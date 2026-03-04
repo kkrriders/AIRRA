@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import Integer, and_, cast, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import verify_api_key
@@ -69,7 +69,7 @@ async def send_notification(
 
     except Exception as e:
         logger.error(f"Failed to send notification: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to send notification: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to send notification")
 
 
 @router.post("/acknowledge", response_model=dict)
@@ -253,45 +253,51 @@ async def get_notification_stats(
     Get notification statistics for monitoring and reporting.
 
     Returns counts, averages, and SLA compliance rates.
+
+    S1 fix: uses SQL aggregations (COUNT/AVG/SUM) instead of loading
+    the entire table into Python memory.
     """
-    # Build base query
-    stmt = select(Notification)
-
+    # Build WHERE filters
+    filters = []
     if engineer_id:
-        stmt = stmt.where(Notification.engineer_id == engineer_id)
+        filters.append(Notification.engineer_id == engineer_id)
     if start_date:
-        stmt = stmt.where(Notification.created_at >= start_date)
+        filters.append(Notification.created_at >= start_date)
     if end_date:
-        stmt = stmt.where(Notification.created_at <= end_date)
+        filters.append(Notification.created_at <= end_date)
 
-    # Execute query
+    where_clause = and_(*filters) if filters else True
+
+    stmt = select(
+        func.count(Notification.id).label("total"),
+        func.count(Notification.sent_at).label("total_sent"),
+        func.count(Notification.delivered_at).label("total_delivered"),
+        func.count(Notification.acknowledged_at).label("total_acknowledged"),
+        func.count(Notification.id).filter(
+            Notification.status == NotificationStatus.FAILED
+        ).label("total_failed"),
+        func.avg(Notification.response_time_seconds).label("avg_response_time"),
+        func.sum(cast(Notification.sla_met, Integer)).label("sla_met_count"),
+        func.count(Notification.id).filter(
+            Notification.sla_met.isnot(None)
+        ).label("sla_total"),
+        func.count(Notification.id).filter(
+            Notification.escalated == True  # noqa: E712
+        ).label("total_escalated"),
+    ).where(where_clause)
+
     result = await db.execute(stmt)
-    notifications = result.scalars().all()
+    row = result.one()
 
-    # Calculate stats
-    total_sent = sum(1 for n in notifications if n.sent_at is not None)
-    total_delivered = sum(1 for n in notifications if n.delivered_at is not None)
-    total_acknowledged = sum(1 for n in notifications if n.acknowledged_at is not None)
-    total_failed = sum(1 for n in notifications if n.status == NotificationStatus.FAILED)
-
-    # Calculate average response time
-    response_times = [n.response_time_seconds for n in notifications if n.response_time_seconds]
-    avg_response_time = sum(response_times) / len(response_times) if response_times else None
-
-    # Calculate SLA compliance rate
-    sla_results = [n.sla_met for n in notifications if n.sla_met is not None]
-    sla_compliance = sum(sla_results) / len(sla_results) if sla_results else None
-
-    # Calculate escalation rate
-    total_escalated = sum(1 for n in notifications if n.escalated)
-    escalation_rate = total_escalated / len(notifications) if notifications else None
+    total = row.total or 0
+    sla_total = row.sla_total or 0
 
     return NotificationStatsResponse(
-        total_sent=total_sent,
-        total_delivered=total_delivered,
-        total_acknowledged=total_acknowledged,
-        total_failed=total_failed,
-        average_response_time_seconds=avg_response_time,
-        sla_compliance_rate=sla_compliance,
-        escalation_rate=escalation_rate,
+        total_sent=row.total_sent or 0,
+        total_delivered=row.total_delivered or 0,
+        total_acknowledged=row.total_acknowledged or 0,
+        total_failed=row.total_failed or 0,
+        average_response_time_seconds=float(row.avg_response_time) if row.avg_response_time else None,
+        sla_compliance_rate=(row.sla_met_count or 0) / sla_total if sla_total > 0 else None,
+        escalation_rate=row.total_escalated / total if total > 0 else None,
     )

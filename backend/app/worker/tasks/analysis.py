@@ -22,6 +22,7 @@ from app.database import get_db_context
 from app.models.action import Action, ActionStatus
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
+from app.models.postmortem import Postmortem
 from app.services.llm_client import get_llm_client
 from app.services.prometheus_client import get_prometheus_client
 from app.worker.celery_app import celery_app
@@ -48,7 +49,10 @@ def analyze_incident(self: Task, incident_id: str) -> dict:
     except SoftTimeLimitExceeded:
         logger.error(f"Analysis task soft time limit exceeded for {incident_id}")
         try:
-            asyncio.run(_mark_incident_failed(incident_id))
+            # 5s cap prevents a saturated DB pool from blocking the hard time limit.
+            asyncio.run(
+                asyncio.wait_for(_mark_incident_failed(incident_id), timeout=5.0)
+            )
         except Exception as cleanup_exc:
             # Log but do not suppress — the SoftTimeLimitExceeded must still propagate
             # so Celery knows the task was killed and can apply acks_late behaviour.
@@ -64,7 +68,10 @@ def analyze_incident(self: Task, incident_id: str) -> dict:
             f"Analysis task got non-retryable error for {incident_id}: {exc}",
             exc_info=True,
         )
-        return {"status": "error", "error": str(exc)}
+        # NEW-22 fix: use exception type name instead of str(exc) — raw exception
+        # messages can contain DB connection strings or file paths and are stored
+        # in the Celery result backend (Redis) in plaintext.
+        return {"status": "error", "error": type(exc).__name__}
     except Exception as exc:
         logger.error(
             f"Analysis task failed for {incident_id}: {exc}",
@@ -121,18 +128,46 @@ async def _run_analysis(incident_id: str) -> dict:
             anomalies = anomaly_detector.detect_multiple(all_metric_results)
 
             if not anomalies:
-                logger.warning(f"No anomalies detected for incident {incident_id}")
-                incident.status = IncidentStatus.RESOLVED
-                return {"status": "no_anomalies", "message": "No anomalies in current metrics"}
+                # NEW-6 fix: a clean Prometheus window doesn't mean the incident
+                # is resolved — the metrics may have already recovered, or the
+                # scrape window may be too narrow. Mark FAILED so a human reviews
+                # it rather than silently closing a potentially real incident.
+                logger.warning(f"No anomalies detected for incident {incident_id} — marking FAILED for human review")
+                incident.status = IncidentStatus.FAILED
+                return {"status": "no_anomalies", "message": "No current anomalies — incident needs manual review"}
+
+            # Fetch past resolved incidents for the same service (RAG-lite context)
+            past_stmt = (
+                select(Incident, Postmortem)
+                .join(Postmortem, Postmortem.incident_id == Incident.id)
+                .where(
+                    Incident.affected_service == incident.affected_service,
+                    Incident.status == IncidentStatus.RESOLVED,
+                    Incident.id != incident.id,
+                )
+                .order_by(Incident.resolved_at.desc())
+                .limit(3)
+            )
+            past_result = await db.execute(past_stmt)
+            past_context = [
+                {
+                    "title": row.Incident.title,
+                    "root_cause": row.Postmortem.actual_root_cause,
+                    "resolved_at": row.Incident.resolved_at.isoformat() if row.Incident.resolved_at else None,
+                }
+                for row in past_result.all()
+            ]
 
             # Generate hypotheses via LLM
             llm_client = get_llm_client()
             hypothesis_generator = HypothesisGenerator(llm_client)
 
+            service_context = incident.context.copy()
             hypotheses_response, llm_response = await hypothesis_generator.generate(
                 anomalies=anomalies,
                 service_name=incident.affected_service,
-                service_context=incident.context.copy(),
+                service_context=service_context.copy(),  # NEW-1: independent copy per callsite
+                past_context=past_context,
             )
 
             ranked_hypotheses = rank_hypotheses(hypotheses_response.hypotheses)
@@ -165,14 +200,22 @@ async def _run_analysis(incident_id: str) -> dict:
                 )
                 db.add(hypothesis)
 
-            # Generate action recommendation for top hypothesis
-            action_selector = ActionSelector()
-            top_hypothesis = ranked_hypotheses[0][1]
-            action_recommendation = action_selector.select(
-                hypothesis=top_hypothesis,
-                service_name=incident.affected_service,
-                service_context=incident.context.copy(),
-            )
+            # Generate action recommendation for top hypothesis.
+            # I2 fix: guard against LLM returning zero hypotheses.
+            action_recommendation = None
+            if not ranked_hypotheses:
+                logger.warning(
+                    f"LLM returned no hypotheses for incident {incident_id} — "
+                    "skipping action selection"
+                )
+            else:
+                action_selector = ActionSelector()
+                top_hypothesis = ranked_hypotheses[0][1]
+                action_recommendation = action_selector.select(
+                    hypothesis=top_hypothesis,
+                    service_name=incident.affected_service,
+                    service_context=service_context.copy(),  # NEW-1: independent copy per callsite
+                )
 
             if action_recommendation:
                 action = Action(
@@ -213,7 +256,8 @@ async def _run_analysis(incident_id: str) -> dict:
             # Return (not raise) so get_db_context sees a clean exit and auto-commits
             # the FAILED status. Raising would trigger the rollback branch, discarding
             # the status update and permanently sticking the incident in ANALYZING.
-            return {"status": "failed", "error": str(e)}
+            # NEW-22 fix: store exception type name, not raw message (Celery result backend).
+            return {"status": "failed", "error": type(e).__name__}
 
 
 async def _mark_incident_failed(incident_id: str) -> None:

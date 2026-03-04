@@ -226,23 +226,19 @@ async def _manage_demo_incidents() -> None:
         runner = get_scenario_runner()
 
         async with get_db_context() as db:
-            # Step 1: Clean up old simulation incidents (older than 24 hours)
+            # Step 1: Clean up old simulation incidents (older than 24 hours).
+            # I3 fix: clean both quick_incident_ui AND ai_generator sources so
+            # ai_generator incidents don't accumulate without bound.
+            # S3 fix: use result.rowcount instead of a pre-DELETE SELECT for counting.
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
-            old_sims_query = select(Incident).where(
-                Incident.detection_source == "quick_incident_ui",
+            delete_query = delete(Incident).where(
+                Incident.detection_source.in_(["quick_incident_ui", "ai_generator"]),
                 Incident.detected_at < cutoff_time
             )
-            old_sims = await db.execute(old_sims_query)
-            old_sim_incidents = old_sims.scalars().all()
-
-            if old_sim_incidents:
-                delete_query = delete(Incident).where(
-                    Incident.detection_source == "quick_incident_ui",
-                    Incident.detected_at < cutoff_time
-                )
-                await db.execute(delete_query)
+            delete_result = await db.execute(delete_query)
+            if delete_result.rowcount:
                 await db.commit()
-                logger.info(f"Cleaned up {len(old_sim_incidents)} old simulation incidents (>24h)")
+                logger.info(f"Cleaned up {delete_result.rowcount} old simulation incidents (>24h)")
 
             # Step 2: Progress existing recent simulation incidents through lifecycle
             recent_sims_query = select(Incident).where(
@@ -269,6 +265,11 @@ async def _manage_demo_incidents() -> None:
                 elif age_minutes > 15 and incident.status == IncidentStatus.EXECUTING:
                     incident.status = IncidentStatus.RESOLVED
                     incident.resolved_at = datetime.now(timezone.utc)
+                    # NEW-21 fix: populate resolution_time_seconds so MTTR analytics
+                    # include demo-resolved incidents (previously left NULL, excluded from AVG).
+                    incident.resolution_time_seconds = int(
+                        (incident.resolved_at - incident.detected_at).total_seconds()
+                    )
                     incident.resolution_summary = "Demo: Simulated successful resolution"
                     logger.info(f"Resolved incident {incident.id} (execution complete)")
 
@@ -276,12 +277,16 @@ async def _manage_demo_incidents() -> None:
             logger.info(f"Progressed {len(recent_incidents)} recent simulation incidents through lifecycle")
 
             # Step 3: Create new simulation incidents if needed (keep 3-5 active).
-            # NOTE: reading .status after db.commit() works here only because the
-            # session is configured with expire_on_commit=False (see database.py).
-            # With the default expire_on_commit=True, SQLAlchemy would expire all
-            # attributes on commit; accessing them in an async session would then
-            # raise MissingGreenlet (async sessions cannot do implicit lazy loads).
-            active_count = len([i for i in recent_incidents if i.status != IncidentStatus.RESOLVED])
+            # I3 fix: count ALL non-resolved incidents across all detection sources
+            # (quick_incident_ui + ai_generator + airra_monitor) so we don't create
+            # extra static scenarios when AI-generated incidents are already present.
+            from sqlalchemy import func as sqla_func
+            active_count_result = await db.execute(
+                select(sqla_func.count(Incident.id)).where(
+                    Incident.status != IncidentStatus.RESOLVED
+                )
+            )
+            active_count = active_count_result.scalar_one()
 
             if active_count < 3:
                 all_scenarios = [
@@ -368,7 +373,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
 
     # Auto-create and manage demo incidents in development mode
     # This creates STATIC incidents on startup for immediate demo
-    # AI-generated incidents will appear over time (every 5 min via Celery Beat)
+    # AI-generated incidents will appear over time (every 30 min via Celery Beat)
     if settings.environment == "development":
         logger.info("Development mode: Seeding engineers and on-call schedules...")
         await _seed_engineers()
@@ -382,9 +387,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Shutdown
     logger.info("Shutting down AIRRA Backend...")
 
-    # Close LLM cache Redis connection
-    from app.services.llm_client import llm_cache
-    await llm_cache.close()
+    # Close shared Redis connection pool (covers LLM cache, rate limiter, analytics, anomaly dedup)
+    from app.core.redis import close_redis
+    await close_redis()
 
     # Close Prometheus HTTP client
     from app.services.prometheus_client import close_prometheus_client

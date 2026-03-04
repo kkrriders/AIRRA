@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airra-celery-worker
+  namespace: airra
+  labels:
+    app: airra-celery-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: airra-celery-worker
+  template:
+    metadata:
+      labels:
+        app: airra-celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: ghcr.io/YOUR_ORG/airra-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - app.worker.celery_app
+            - worker
+            - --loglevel=info
+            - --concurrency=4
+            - -Q
+            - celery,analysis
+          envFrom:
+            - configMapRef:
+                name: airra-config
+            - secretRef:
+                name: airra-secrets
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - -A
+                - app.worker.celery_app
+                - inspect
+                - ping
+                - --timeout=10
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"

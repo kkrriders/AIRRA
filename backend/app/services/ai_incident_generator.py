@@ -4,7 +4,6 @@ AI-Powered Incident Generator
 Continuously generates realistic, unique incident scenarios using LLM.
 Runs as a background task to simulate ongoing system monitoring.
 """
-import asyncio
 import logging
 import random
 from datetime import datetime, timezone
@@ -37,7 +36,6 @@ class AIIncidentGenerator:
         self.interval_minutes = interval_minutes
         self.incidents_per_cycle = incidents_per_cycle
         self.enabled = enabled
-        self.is_running = False
 
         # Service pool for variety
         self.services = [
@@ -66,35 +64,6 @@ class AIIncidentGenerator:
             "rate_limit_exceeded",
         ]
 
-    async def start(self):
-        """Start the AI incident generator background task."""
-        if not self.enabled:
-            logger.info("AI incident generator is disabled")
-            return
-
-        self.is_running = True
-        logger.info(
-            f"AI incident generator started (interval: {self.interval_minutes}min, "
-            f"rate: {self.incidents_per_cycle} per cycle)"
-        )
-
-        while self.is_running:
-            try:
-                await asyncio.sleep(self.interval_minutes * 60)  # Convert to seconds
-
-                if self.is_running:  # Check again after sleep
-                    await self._generate_incidents()
-            except Exception as e:
-                logger.error(
-                    f"AI incident generator error (will retry): {str(e)}",
-                    exc_info=True,
-                )
-
-    async def stop(self):
-        """Stop the AI incident generator."""
-        self.is_running = False
-        logger.info("AI incident generator stopped")
-
     async def generate_once(self) -> None:
         """
         Public facade for Celery tasks — run a single generation cycle.
@@ -109,11 +78,13 @@ class AIIncidentGenerator:
         try:
             from app.services.llm_client import get_llm_client
 
-            # Use the fast/free generator model, not the reasoning model.
+            # NEW-10 fix: pass the generator model at construction time instead of
+            # mutating the returned instance. The shared singleton (if cached) would
+            # otherwise have its .model field changed, corrupting concurrent callers
+            # (e.g. hypothesis generator) that rely on the reasoning model.
             # llama-3.1-8b-instant is on Groq's free tier and is sufficient
             # for creative incident text generation (no deep reasoning needed).
-            llm_client = get_llm_client()
-            llm_client.model = settings.llm_generator_model
+            llm_client = get_llm_client(model=settings.llm_generator_model)
 
             async with get_db_context() as db:
                 for _ in range(self.incidents_per_cycle):
@@ -163,7 +134,9 @@ class AIIncidentGenerator:
                         )
 
                         db.add(incident)
-                        await db.commit()
+                        # S2 fix: flush to obtain DB-generated ID without committing
+                        # mid-loop. The context manager commits atomically on exit.
+                        await db.flush()
                         await db.refresh(incident)
 
                         logger.info(
@@ -210,15 +183,14 @@ Output ONLY valid JSON, no markdown or extra text:
     ) -> dict:
         """Parse LLM response into incident data."""
         import json
-        import re
+
+        from app.services.llm_client import extract_json_from_llm_response
 
         try:
-            # Try to extract JSON from response (handle markdown code blocks)
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                response = json_match.group(0)
-
-            data = json.loads(response)
+            # Extract JSON using bracket-counting parser (handles markdown code
+            # blocks, preamble text, and nested objects correctly).
+            content = extract_json_from_llm_response(response)
+            data = json.loads(content)
 
             # Validate and normalize
             return {
@@ -271,19 +243,3 @@ def get_ai_generator() -> AIIncidentGenerator:
     return _generator
 
 
-async def start_ai_generator():
-    """Start the AI incident generator background task."""
-    generator = get_ai_generator()
-    if generator.enabled:
-        asyncio.create_task(generator.start())
-        logger.info("AI incident generator background task started")
-    else:
-        logger.info("AI incident generator disabled (production mode)")
-
-
-async def stop_ai_generator():
-    """Stop the AI incident generator background task."""
-    generator = get_ai_generator()
-    if generator.is_running:
-        await generator.stop()
-        logger.info("AI incident generator background task stopped")

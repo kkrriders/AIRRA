@@ -4,34 +4,15 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import redis.asyncio as aioredis
-
 from app.config import settings
 from app.core.perception.anomaly_detector import AnomalyDetector, categorize_anomaly
+from app.core.perception.signal_correlator import CorrelatedIncident, SignalCorrelator
+from app.core.redis import get_redis
 from app.database import get_db_context
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.services.prometheus_client import get_prometheus_client
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Module-level Redis client for anomaly deduplication.
-# Shared across all check_once() calls in the same worker process.
-# ---------------------------------------------------------------------------
-_redis_client: Optional[aioredis.Redis] = None
-
-
-def _get_redis() -> aioredis.Redis:
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = aioredis.from_url(
-            str(settings.redis_url),
-            encoding="utf-8",
-            decode_responses=True,
-            socket_connect_timeout=2,
-            socket_timeout=2,
-        )
-    return _redis_client
 
 
 class AnomalyMonitor:
@@ -54,32 +35,11 @@ class AnomalyMonitor:
         self.poll_interval_seconds = poll_interval_seconds
         self.min_confidence = min_confidence
         self.deduplication_window = timedelta(minutes=deduplication_window_minutes)
-        self.is_running = False
         # In-memory fallback for dedup when Redis is unreachable.
         # Primary dedup state lives in Redis so it is shared across Celery
         # worker processes and survives restarts (IMP-2 fix).
         self._fallback_recent_incidents: dict[str, datetime] = {}
         self._query_semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_QUERIES)
-
-    async def start(self):
-        """Start the monitoring loop."""
-        self.is_running = True
-        logger.info("Anomaly monitor started")
-
-        while self.is_running:
-            try:
-                await self._check_for_anomalies()
-            except Exception as e:
-                logger.error(
-                    f"Anomaly monitor error (will retry next cycle): {str(e)}",
-                    exc_info=True,
-                )
-            await asyncio.sleep(self.poll_interval_seconds)
-
-    async def stop(self):
-        """Stop the monitoring loop."""
-        self.is_running = False
-        logger.info("Anomaly monitor stopped")
 
     async def check_once(self) -> None:
         """
@@ -148,7 +108,20 @@ class AnomalyMonitor:
                 ]
 
                 if significant_anomalies:
-                    await self._create_incident(service_name, significant_anomalies)
+                    # Run multi-signal correlation.  With only Prometheus metrics
+                    # the correlator returns [] (needs ≥2 signal types), so we
+                    # fall back to the raw anomaly path.  When Loki/Jaeger signals
+                    # are added they flow through here automatically.
+                    signals = SignalCorrelator.from_anomalies(significant_anomalies)
+                    correlator = SignalCorrelator()
+                    correlated = await correlator.correlate_signals(
+                        signals, service_filter=service_name
+                    )
+                    top_correlation: CorrelatedIncident | None = correlated[0] if correlated else None
+
+                    await self._create_incident(
+                        service_name, significant_anomalies, correlation=top_correlation
+                    )
                     await self._mark_recently_reported(service_name)
 
             except Exception as e:
@@ -182,7 +155,7 @@ class AnomalyMonitor:
         """
         try:
             key = f"airra:anomaly_dedup:{service_name}"
-            return bool(await _get_redis().exists(key))
+            return bool(await get_redis().exists(key))
         except Exception as e:
             logger.warning(f"Redis dedup check failed for {service_name}, using in-memory fallback: {e}")
             last = self._fallback_recent_incidents.get(service_name)
@@ -201,13 +174,23 @@ class AnomalyMonitor:
         try:
             key = f"airra:anomaly_dedup:{service_name}"
             ttl = int(self.deduplication_window.total_seconds())
-            await _get_redis().set(key, "1", ex=ttl)
+            await get_redis().set(key, "1", ex=ttl)
         except Exception as e:
             logger.warning(f"Redis dedup mark failed for {service_name}, using in-memory fallback: {e}")
             self._fallback_recent_incidents[service_name] = datetime.now(timezone.utc)
 
-    async def _create_incident(self, service_name: str, anomalies: list):
-        """Create an incident from detected anomalies."""
+    async def _create_incident(
+        self,
+        service_name: str,
+        anomalies: list,
+        correlation: "CorrelatedIncident | None" = None,
+    ):
+        """Create an incident from detected anomalies.
+
+        When a CorrelatedIncident is supplied (i.e. multi-signal correlation
+        succeeded), its confidence score and signal count are embedded in the
+        incident context for downstream consumers (learning engine, analytics).
+        """
         try:
             # Determine severity based on anomaly scores
             max_deviation = max(a.deviation_sigma for a in anomalies)
@@ -243,6 +226,15 @@ class AnomalyMonitor:
                 for a in anomalies
             }
 
+            incident_context: dict = {
+                "anomaly_count": len(anomalies),
+                "max_deviation": max_deviation,
+                "auto_detected": True,
+            }
+            if correlation is not None:
+                incident_context["correlation_confidence"] = round(correlation.confidence, 4)
+                incident_context["correlated_signal_count"] = len(correlation.signals)
+
             # Create incident
             async with get_db_context() as db:
                 incident = Incident(
@@ -255,11 +247,7 @@ class AnomalyMonitor:
                     detected_at=datetime.now(timezone.utc),
                     detection_source="airra_monitor",
                     metrics_snapshot=metrics_snapshot,
-                    context={
-                        "anomaly_count": len(anomalies),
-                        "max_deviation": max_deviation,
-                        "auto_detected": True,
-                    },
+                    context=incident_context,
                 )
 
                 db.add(incident)
@@ -296,17 +284,3 @@ def get_monitor() -> AnomalyMonitor:
     return _monitor
 
 
-async def start_anomaly_monitor():
-    """Start the anomaly monitoring background task."""
-    monitor = get_monitor()
-    if not monitor.is_running:
-        asyncio.create_task(monitor.start())
-        logger.info("Anomaly monitor background task started")
-
-
-async def stop_anomaly_monitor():
-    """Stop the anomaly monitoring background task."""
-    monitor = get_monitor()
-    if monitor.is_running:
-        await monitor.stop()
-        logger.info("Anomaly monitor background task stopped")

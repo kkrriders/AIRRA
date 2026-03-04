@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: airra-frontend
+  namespace: airra
+  labels:
+    app: airra-frontend
+spec:
+  selector:
+    app: airra-frontend
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 3000
+  # Use LoadBalancer for cloud providers, or swap to ClusterIP + Ingress
+  type: LoadBalancer

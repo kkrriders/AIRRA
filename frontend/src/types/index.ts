@@ -51,6 +51,8 @@ export interface Incident {
   detected_at: string;
   resolved_at: string | null;
   resolution_time_seconds: number | null;
+  resolution_summary: string | null;
+  assigned_engineer_id: string | null;
   detection_source: string;
   metrics_snapshot: Record<string, any>;
   context: Record<string, any>;
@@ -88,6 +90,8 @@ export interface Action {
   requires_approval: boolean;
   approved_by: string | null;
   approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
   rejection_reason: string | null;
   execution_mode: string;
   executed_at: string | null;

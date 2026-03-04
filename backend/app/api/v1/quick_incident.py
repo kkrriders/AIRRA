@@ -149,13 +149,18 @@ async def create_and_analyze_incident(
 
         # ========================================
         # Step 2: Auto-generate Title & Description
+        # N1 fix: use local variables instead of mutating the Pydantic request object.
         # ========================================
-        if not request.title:
+        if request.title:
+            title = request.title
+        else:
             anomaly_categories = [categorize_anomaly(a) for a in anomalies[:3]]
             categories_str = ', '.join(anomaly_categories[:2]) if anomaly_categories else "Issue"
-            request.title = f"Anomalies detected in {request.service_name}: {categories_str}"
+            title = f"Anomalies detected in {request.service_name}: {categories_str}"
 
-        if not request.description:
+        if request.description:
+            description = request.description
+        else:
             anomaly_summaries = []
             for a in anomalies[:5]:
                 category = categorize_anomaly(a)
@@ -164,27 +169,28 @@ async def create_and_analyze_incident(
                 )
             if not anomaly_summaries:
                 anomaly_summaries = ["No specific anomalies detailed."]
-            request.description = "Auto-detected anomalies:\n" + "\n".join(anomaly_summaries)
+            description = "Auto-detected anomalies:\n" + "\n".join(anomaly_summaries)
 
-        # Auto-detect severity based on anomalies
+        # Auto-detect severity based on anomalies (guard: anomalies list may be empty)
+        severity = request.severity
         if anomalies:
             max_deviation = max(a.deviation_sigma for a in anomalies)
             if max_deviation >= 5.0:
-                request.severity = IncidentSeverity.CRITICAL
+                severity = IncidentSeverity.CRITICAL
             elif max_deviation >= 4.0:
-                request.severity = IncidentSeverity.HIGH
+                severity = IncidentSeverity.HIGH
             elif max_deviation >= 3.0:
-                request.severity = IncidentSeverity.MEDIUM
+                severity = IncidentSeverity.MEDIUM
             else:
-                request.severity = IncidentSeverity.LOW
+                severity = IncidentSeverity.LOW
 
         # ========================================
         # Step 3: Create Incident
         # ========================================
         incident = Incident(
-            title=request.title,
-            description=request.description,
-            severity=request.severity,
+            title=title,
+            description=description,
+            severity=severity,
             status=IncidentStatus.ANALYZING,  # Start in analyzing state
             affected_service=request.service_name,
             affected_components=[request.service_name],
@@ -214,7 +220,7 @@ async def create_and_analyze_incident(
             hypotheses_response, llm_response = await hypothesis_generator.generate(
                 anomalies=anomalies,
                 service_name=request.service_name,
-                service_context=service_context,
+                service_context=service_context.copy(),  # NEW-1: pass a copy to prevent aliasing
             )
 
             # Create hypothesis records
@@ -252,15 +258,17 @@ async def create_and_analyze_incident(
 
             # ========================================
             # Step 5: Generate Action Recommendation
+            # I2 fix: guard against LLM returning zero hypotheses.
             # ========================================
-            action_selector = ActionSelector()
-            top_hypothesis = ranked_hypotheses[0][1]
-
-            action_recommendation = action_selector.select(
-                hypothesis=top_hypothesis,
-                service_name=request.service_name,
-                service_context=service_context,
-            )
+            action_recommendation = None
+            if ranked_hypotheses:
+                action_selector = ActionSelector()
+                top_hypothesis = ranked_hypotheses[0][1]
+                action_recommendation = action_selector.select(
+                    hypothesis=top_hypothesis,
+                    service_name=request.service_name,
+                    service_context=service_context.copy(),  # NEW-1: prevent aliasing with generate() call
+                )
 
             if action_recommendation:
                 action = Action(
@@ -287,7 +295,8 @@ async def create_and_analyze_incident(
         except Exception as e:
             logger.error(f"Analysis failed: {str(e)}", exc_info=True)
             incident.status = IncidentStatus.FAILED
-            incident.context["error"] = str(e)
+            # I1 fix: full reassignment so SQLAlchemy detects the JSON column change.
+            incident.context = {**incident.context, "error": str(e)}
             # Continue to return the incident even if analysis failed
 
         # ========================================
@@ -318,11 +327,13 @@ async def create_and_analyze_incident(
 
         return incident_with_relations
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Quick incident creation failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to create and analyze incident: {str(e)}",
+            detail="Failed to create and analyze incident",
         )
 
 

@@ -43,6 +43,15 @@ class Settings(BaseSettings):
         description="API key for authenticating requests. "
         "Leave empty to disable auth (development only)."
     )
+    notification_token_secret: SecretStr = Field(
+        default="",
+        description=(
+            "Dedicated HMAC secret for signing notification acknowledgement tokens "
+            "(set AIRRA_NOTIFICATION_TOKEN_SECRET). Rotated independently of api_key "
+            "so key rotation does not invalidate in-flight acknowledgement links. "
+            "Falls back to api_key if empty."
+        ),
+    )
 
     # Database
     database_url: PostgresDsn = Field(
@@ -65,6 +74,13 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr = Field(default="", description="Anthropic API key")
     openai_api_key: SecretStr = Field(default="", description="OpenAI API key")
     openrouter_api_key: SecretStr = Field(default="", description="OpenRouter API key")
+    groq_api_key: SecretStr = Field(
+        default="",
+        description=(
+            "Groq API key (set AIRRA_GROQ_API_KEY). Used when llm_provider='groq'. "
+            "Alternatively, set a Groq key in AIRRA_OPENAI_API_KEY (legacy)."
+        ),
+    )
     llm_model: str = Field(
         default="claude-3-5-sonnet-20241022",
         description="LLM model for reasoning tasks (hypothesis analysis, structured output)"
@@ -139,6 +155,16 @@ class Settings(BaseSettings):
         default=300,
         ge=30,
         description="Action execution timeout in seconds"
+    )
+
+    # Rate Limiting
+    rate_limit_trust_x_forwarded_for: bool = Field(
+        default=False,
+        description=(
+            "Trust X-Forwarded-For header for client IP extraction in rate limiting. "
+            "Enable only when running behind a trusted reverse proxy (nginx/Envoy). "
+            "When False, uses request.client.host (the direct TCP connection IP)."
+        ),
     )
 
     # Background Tasks
@@ -232,13 +258,22 @@ class Settings(BaseSettings):
 
         return v
 
-    @field_validator("anthropic_api_key", "openai_api_key")
+    @field_validator("anthropic_api_key", "openai_api_key", "groq_api_key")
     @classmethod
     def validate_api_keys(cls, v: SecretStr, info) -> SecretStr:
         """Validate that required API keys are set in non-development environments."""
-        # In production, we need the appropriate API key
-        if info.data.get("environment") == "production" and not v.get_secret_value():
-            raise ValueError(f"{info.field_name} must be set in production")
+        if info.data.get("environment") != "production":
+            return v
+        provider = info.data.get("llm_provider", "")
+        field = info.field_name
+        # Only require the key that matches the configured provider
+        required = (
+            (field == "anthropic_api_key" and provider == "anthropic")
+            or (field == "openai_api_key" and provider == "openai")
+            or (field == "groq_api_key" and provider == "groq")
+        )
+        if required and not v.get_secret_value():
+            raise ValueError(f"{field} must be set in production when llm_provider='{provider}'")
         return v
 
 

@@ -11,14 +11,14 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.engineer import Engineer, EngineerStatus
 from app.models.engineer_review import EngineerReview, ReviewStatus, ReviewDecision
-from app.models.incident import Incident, IncidentStatus
+from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.schemas.engineer_review import (
     EngineerReviewCreate,
     EngineerReviewListResponse,
@@ -70,10 +70,30 @@ async def assign_review_to_engineer(
             f"capacity={engineer.current_review_count}/{engineer.max_concurrent_reviews}",
         )
 
-    # Check if already assigned
-    existing_stmt = select(EngineerReview).where(
-        EngineerReview.incident_id == incident_id,
-        EngineerReview.status.in_([ReviewStatus.ASSIGNED, ReviewStatus.IN_PROGRESS]),
+    # Guard against assigning a review while the incident is in a conflicting state
+    # (Bug #8 fix: validate before any state mutation)
+    if incident.status in [
+        IncidentStatus.ANALYZING,
+        IncidentStatus.ESCALATED,
+        IncidentStatus.FAILED,
+    ]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot assign review: incident is in '{incident.status.value}' status. "
+                "Only DETECTED or PENDING_APPROVAL incidents can be assigned."
+            ),
+        )
+
+    # Check if already assigned — with_for_update() acquires a row lock to prevent
+    # two concurrent requests both passing this check (Bug #2 race condition fix)
+    existing_stmt = (
+        select(EngineerReview)
+        .where(
+            EngineerReview.incident_id == incident_id,
+            EngineerReview.status.in_([ReviewStatus.ASSIGNED, ReviewStatus.IN_PROGRESS]),
+        )
+        .with_for_update()
     )
     existing = (await db.execute(existing_stmt)).scalar_one_or_none()
 
@@ -100,7 +120,7 @@ async def assign_review_to_engineer(
 
     # Update incident status if needed
     if incident.status == IncidentStatus.DETECTED:
-        incident.status = IncidentStatus.PENDING_APPROVAL  # Or create new status PENDING_REVIEW
+        incident.status = IncidentStatus.PENDING_APPROVAL
 
     try:
         await db.commit()
@@ -133,8 +153,20 @@ async def list_incidents_pending_review(
     - Are marked as critical severity
     - Don't have an active review assignment
     """
-    # Find incidents without active reviews
-    # This is a simplified version - in production, add more sophisticated filtering
+    # NEW-29 fix: filter out already-assigned incidents in SQL using NOT EXISTS so
+    # the LIMIT applies to the already-filtered result set. The previous approach
+    # fetched `limit` rows then filtered in Python, which could return fewer items
+    # than requested (violating limit semantics) and required two round-trips.
+    #
+    # NEW-13 fix (related): incident_ids were built as [str(inc.id) ...], passing
+    # string values to a UUID-typed column — replaced by the SQL-only approach below.
+    active_review_exists = exists(
+        select(EngineerReview.id).where(
+            EngineerReview.incident_id == Incident.id,
+            EngineerReview.status.in_([ReviewStatus.ASSIGNED, ReviewStatus.IN_PROGRESS]),
+        )
+    )
+
     stmt = (
         select(Incident)
         .where(
@@ -142,29 +174,27 @@ async def list_incidents_pending_review(
                 IncidentStatus.DETECTED,
                 IncidentStatus.ANALYZING,
                 IncidentStatus.PENDING_APPROVAL,
-            ])
+            ]),
+            ~active_review_exists,
         )
         .order_by(
-            desc(Incident.severity),  # Critical first
-            Incident.detected_at,  # Oldest first
+            # N5 fix: sort by numeric priority — IncidentSeverity is a string enum
+            # so alphabetical desc is 'medium > low > high > critical' (wrong).
+            # A CASE expression maps to correct priority ordering.
+            case(
+                (Incident.severity == IncidentSeverity.CRITICAL, 4),
+                (Incident.severity == IncidentSeverity.HIGH, 3),
+                (Incident.severity == IncidentSeverity.MEDIUM, 2),
+                (Incident.severity == IncidentSeverity.LOW, 1),
+                else_=0,
+            ).desc(),
+            Incident.detected_at,  # Oldest first within same severity
         )
         .limit(limit)
     )
 
     result = await db.execute(stmt)
-    incidents = result.scalars().all()
-
-    # Filter out incidents that already have active reviews
-    incident_ids = [str(inc.id) for inc in incidents]
-    if incident_ids:
-        review_stmt = select(EngineerReview.incident_id).where(
-            EngineerReview.incident_id.in_(incident_ids),
-            EngineerReview.status.in_([ReviewStatus.ASSIGNED, ReviewStatus.IN_PROGRESS]),
-        )
-        assigned_ids = set((await db.execute(review_stmt)).scalars().all())
-        incidents = [inc for inc in incidents if inc.id not in assigned_ids]
-
-    return incidents
+    return result.scalars().all()
 
 
 @router.get("/incidents/under-review", response_model=EngineerReviewListResponse)
@@ -402,10 +432,12 @@ async def get_ai_vs_engineer_comparison(
         )
 
     # Build AI approach summary
+    # NEW-28 fix: `h.root_cause` does not exist on the Hypothesis model — the field
+    # is `h.description`. This caused an AttributeError on every call to this endpoint.
     ai_hypotheses = [
         {
             "id": str(h.id),
-            "description": h.root_cause,
+            "description": h.description,
             "confidence": h.confidence_score,
             "evidence": h.evidence,
         }
@@ -481,11 +513,19 @@ async def make_review_decision(
     review.decision_made_at = datetime.now(timezone.utc)
     review.decision_rationale = decision_request.rationale
 
-    # Update statuses
+    # Update statuses based on decision
     if decision_request.decision == ReviewDecision.ENGINEER_APPROACH:
         review.status = ReviewStatus.ACCEPTED
     elif decision_request.decision == ReviewDecision.AI_APPROACH:
         review.status = ReviewStatus.REJECTED
+    elif decision_request.decision == ReviewDecision.HYBRID_APPROACH:
+        # Hybrid combines elements of both — treat as accepted so execution proceeds
+        review.status = ReviewStatus.ACCEPTED
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unrecognized decision value: '{decision_request.decision.value}'",
+        )
 
     # Update engineer workload
     engineer_stmt = select(Engineer).where(Engineer.id == review.engineer_id)

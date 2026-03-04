@@ -50,7 +50,7 @@ async def capture_outcome(
         learning_engine = get_learning_engine()
 
         outcome = IncidentOutcome(
-            incident_id=str(incident_id),
+            incident_id=incident_id,
             hypothesis_id=outcome_request.hypothesis_id,
             hypothesis_correct=outcome_request.hypothesis_correct,
             action_id=outcome_request.action_id,
@@ -69,7 +69,7 @@ async def capture_outcome(
 
     except Exception as e:
         logger.error(f"Failed to capture outcome: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to capture outcome: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to capture outcome")
 
 
 @router.get("/insights")
@@ -94,7 +94,7 @@ async def get_insights(days: int = 30):
 
     except Exception as e:
         logger.error(f"Failed to generate insights: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate insights: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate insights")
 
 
 @router.get("/patterns")
@@ -126,4 +126,4 @@ async def get_patterns():
 
     except Exception as e:
         logger.error(f"Failed to get patterns: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get patterns: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get patterns")

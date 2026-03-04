@@ -125,6 +125,12 @@ class Action(Base, TimestampMixin):
         comment="User who approved (email or ID)",
     )
     approved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    rejected_by: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="User who rejected (email or ID)",
+    )
+    rejected_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Execution

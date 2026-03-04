@@ -7,11 +7,13 @@ Senior Engineering Note:
 - Availability tracking for assignment algorithms
 - Async request handling with proper error handling
 """
+import json
 import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import cast, desc, func, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -129,10 +131,13 @@ async def get_engineer(
     if not engineer:
         raise HTTPException(status_code=404, detail="Engineer not found")
 
-    # Calculate statistics
-    # TODO: Query actual review counts from engineer_reviews table
+    # NEW-16 fix: `engineer.__dict__` spreads SQLAlchemy internals (_sa_instance_state)
+    # directly into the Pydantic constructor, which causes validation errors.
+    # Use model_validate() via EngineerResponse (which has from_attributes=True) to
+    # produce a clean dict, then construct EngineerWithStats from that + computed fields.
+    base = EngineerResponse.model_validate(engineer)
     stats = EngineerWithStats(
-        **engineer.__dict__,
+        **base.model_dump(),
         pending_reviews=0,  # Will be populated from engineer_reviews
         in_progress_reviews=engineer.current_review_count,
         completed_today=0,  # Will be calculated from today's completed reviews
@@ -290,12 +295,15 @@ async def list_available_engineers(
         .order_by(Engineer.current_review_count)  # Load-balance: least busy first
     )
 
+    # Push expertise filter to DB using PostgreSQL JSON containment (@>)
+    # This avoids loading all engineers into memory before filtering.
+    if expertise:
+        stmt = stmt.where(
+            cast(Engineer.expertise, JSONB).contains(cast(json.dumps([expertise]), JSONB))
+        )
+
     result = await db.execute(stmt)
     engineers = result.scalars().all()
-
-    # Filter by expertise if specified (JSON array contains check)
-    if expertise:
-        engineers = [e for e in engineers if expertise in e.expertise]
 
     # Filter to only those who can accept reviews
     available = [e for e in engineers if e.can_accept_review()]

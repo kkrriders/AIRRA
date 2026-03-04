@@ -9,7 +9,7 @@ This module provides:
 - FastAPI test client with dependency overrides
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
@@ -200,7 +200,7 @@ def normal_metric_data() -> dict[str, list[MetricResult]]:
 
     Returns metrics with stable values showing no anomalies.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     values = [
         MetricDataPoint(timestamp=(now - timedelta(minutes=i)).timestamp(), value=50.0)
         for i in range(20, 0, -1)
@@ -273,7 +273,7 @@ def anomalous_metric_data() -> dict[str, list[MetricResult]]:
 
     Returns metrics showing memory leak pattern.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Memory gradually increasing (leak pattern)
     memory_values = [
@@ -390,7 +390,7 @@ def incident_factory(test_db: AsyncSession):
             "status": IncidentStatus.DETECTED,
             "affected_service": "test-service",
             "affected_components": ["component-1"],
-            "detected_at": datetime.utcnow(),
+            "detected_at": datetime.now(timezone.utc),
             "detection_source": "test",
             "metrics_snapshot": {},
             "context": {},
@@ -508,7 +508,7 @@ def anomaly_detection_factory():
             "current_value": 90.0,
             "expected_value": 50.0,
             "deviation_sigma": 4.0,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc),
             "context": {"labels": {"service": "test-service"}},
         }
         defaults.update(kwargs)

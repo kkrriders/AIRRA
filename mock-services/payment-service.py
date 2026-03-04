@@ -1,6 +1,7 @@
+import os
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Flask, Response
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
@@ -69,7 +70,7 @@ def home():
 @app.route('/health')
 def health():
     """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.route('/metrics')
@@ -120,7 +121,7 @@ def trigger_incident():
     return {
         "status": "incident_triggered",
         "message": "Service will now show high memory/CPU usage",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -132,7 +133,7 @@ def resolve_incident():
     return {
         "status": "incident_resolved",
         "message": "Service returned to normal operation",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -154,4 +155,7 @@ if __name__ == '__main__':
     print("      - targets: ['localhost:5001']")
     print()
 
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    # NEW-11 fix: debug=True enables Werkzeug's interactive REPL (RCE risk).
+    # Guard with env var so local iteration is still possible while keeping it
+    # off by default and in docker-compose.
+    app.run(host='0.0.0.0', port=5001, debug=os.getenv("FLASK_DEBUG", "false").lower() == "true")

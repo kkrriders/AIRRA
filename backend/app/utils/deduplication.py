@@ -367,19 +367,24 @@ async def create_or_update_incident(
         # Update existing incident instead of creating new one
         logger.info(f"Deduplicating: updating existing incident {duplicate.id}")
 
-        # Update metrics snapshot (merge with existing)
+        # Update metrics snapshot (merge with existing).
+        # NEW-4 fix: full reassignment so SQLAlchemy detects the JSON column change
+        # without requiring MutableDict tracking (same pattern as I1 fix elsewhere).
         if metrics_snapshot:
-            existing_metrics = duplicate.metrics_snapshot or {}
-            existing_metrics.update(metrics_snapshot)
-            duplicate.metrics_snapshot = existing_metrics
+            duplicate.metrics_snapshot = {
+                **(duplicate.metrics_snapshot or {}),
+                **metrics_snapshot,
+            }
 
-        # Update context (merge with existing)
+        # Update context (merge with existing) — full reassignment (NEW-4 fix).
         if context:
             existing_context = duplicate.context or {}
-            existing_context.update(context)
-            existing_context['duplicate_count'] = existing_context.get('duplicate_count', 0) + 1
-            existing_context['last_duplicate_at'] = datetime.now(timezone.utc).isoformat()
-            duplicate.context = existing_context
+            duplicate.context = {
+                **existing_context,
+                **context,
+                "duplicate_count": existing_context.get("duplicate_count", 0) + 1,
+                "last_duplicate_at": datetime.now(timezone.utc).isoformat(),
+            }
 
         # Update severity if new one is higher
         severity_order = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}

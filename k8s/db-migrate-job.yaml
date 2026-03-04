@@ -1,0 +1,25 @@
+# One-shot Job that runs 'alembic upgrade head' before the backend starts.
+# Re-run on each deploy: kubectl delete job airra-db-migrate -n airra && kubectl apply -f k8s/db-migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: airra-db-migrate
+  namespace: airra
+  labels:
+    app: airra-db-migrate
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: ghcr.io/YOUR_ORG/airra-backend:latest
+          imagePullPolicy: Always
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: airra-config
+            - secretRef:
+                name: airra-secrets

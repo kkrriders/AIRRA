@@ -1,11 +1,15 @@
 """Pydantic schemas for Action API requests and responses."""
+import re
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.action import ActionStatus, ActionType, RiskLevel
+
+# Allowed approver identity format: email or simple username (alphanumeric + . _ - @)
+_APPROVER_PATTERN = re.compile(r"^[\w.\-@+]{2,255}$")
 
 
 class ActionBase(BaseModel):
@@ -33,15 +37,35 @@ class ActionCreate(ActionBase):
 class ActionApprove(BaseModel):
     """Schema for approving an action."""
 
-    approved_by: str = Field(..., min_length=1, max_length=255)
+    approved_by: str = Field(..., min_length=2, max_length=255)
     execution_mode: str = Field(default="dry_run")
+
+    @field_validator("approved_by")
+    @classmethod
+    def validate_approved_by(cls, v: str) -> str:
+        """S4 fix: reject obviously spoofed/system-impersonation values."""
+        if not _APPROVER_PATTERN.match(v):
+            raise ValueError(
+                "approved_by must be a valid email or username (letters, digits, . _ - @ only)"
+            )
+        return v
 
 
 class ActionReject(BaseModel):
     """Schema for rejecting an action."""
 
-    rejected_by: str = Field(..., min_length=1, max_length=255)
+    rejected_by: str = Field(..., min_length=2, max_length=255)
     rejection_reason: str = Field(..., min_length=1)
+
+    @field_validator("rejected_by")
+    @classmethod
+    def validate_rejected_by(cls, v: str) -> str:
+        """S4 fix: reject obviously spoofed/system-impersonation values."""
+        if not _APPROVER_PATTERN.match(v):
+            raise ValueError(
+                "rejected_by must be a valid email or username (letters, digits, . _ - @ only)"
+            )
+        return v
 
 
 class ActionUpdate(BaseModel):
@@ -62,6 +86,8 @@ class ActionResponse(ActionBase):
     requires_approval: bool
     approved_by: Optional[str] = None
     approved_at: Optional[datetime] = None
+    rejected_by: Optional[str] = None
+    rejected_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
     execution_mode: str
     executed_at: Optional[datetime] = None

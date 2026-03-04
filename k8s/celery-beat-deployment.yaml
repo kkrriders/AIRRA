@@ -1,0 +1,53 @@
+# IMPORTANT: replicas MUST stay at 1. Never scale or add HPA to celery-beat.
+# Two beat instances produce duplicate tasks on every schedule tick.
+# Uses RedBeat scheduler (state stored in Redis) so schedule timestamps
+# survive pod restarts without firing all tasks immediately on startup.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airra-celery-beat
+  namespace: airra
+  labels:
+    app: airra-celery-beat
+spec:
+  replicas: 1
+  # Recreate (not RollingUpdate) prevents an overlap window where two beat
+  # pods are briefly running simultaneously during a rollout.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: airra-celery-beat
+  template:
+    metadata:
+      labels:
+        app: airra-celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: ghcr.io/YOUR_ORG/airra-backend:latest
+          imagePullPolicy: Always
+          command:
+            - celery
+            - -A
+            - app.worker.celery_app
+            - beat
+            - --loglevel=info
+          envFrom:
+            - configMapRef:
+                name: airra-config
+            - secretRef:
+                name: airra-secrets
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "celery.*beat"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

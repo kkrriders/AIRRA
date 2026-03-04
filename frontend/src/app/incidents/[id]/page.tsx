@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -28,30 +28,80 @@ import {
   Database,
   Server,
   ChevronRight,
-  Fingerprint
+  Fingerprint,
+  FileText
 } from "lucide-react";
 import { toast } from "sonner";
 import { Navbar } from "@/components/layout/Navbar";
+import PostIncidentReviewForm from "@/components/incidents/PostIncidentReviewForm";
+import PostIncidentReviewDisplay from "@/components/incidents/PostIncidentReviewDisplay";
 
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const queryClient = useQueryClient();
+  const [showPIRForm, setShowPIRForm] = useState(false);
+  const [isEditingPIR, setIsEditingPIR] = useState(false);
 
   const { data: incident, isLoading } = useQuery({
     queryKey: ["incident", id],
     queryFn: () => api.getIncident(id),
+    refetchInterval: (query) =>
+      query.state.data?.status === "analyzing" ? 3000 : false,
+  });
+
+  const { data: postmortem } = useQuery({
+    queryKey: ["postmortem", id],
+    queryFn: () => api.getPostmortem(id),
+    enabled: incident?.status === "resolved",
+    // Prevent background refetch from overwriting form state while the edit form is open
+    staleTime: Infinity,
   });
 
   const analyzeMutation = useMutation({
     mutationFn: () => api.analyzeIncident(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["incident", id] });
-      toast.success("Analysis completed successfully");
+      toast.success("Analysis queued — status will update automatically");
     },
     onError: (error: any) => {
       toast.error(error.message || "Analysis failed");
     },
   });
+
+  const createPostmortemMutation = useMutation({
+    mutationFn: (data: any) => api.createPostmortem(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["postmortem", id] });
+      setShowPIRForm(false);
+      toast.success("Post-incident review saved");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to save review");
+    },
+  });
+
+  const updatePostmortemMutation = useMutation({
+    mutationFn: (data: any) => {
+      // Read postmortem ID from cache at call-time, not from the stale closure at definition-time
+      const cached = queryClient.getQueryData<any>(["postmortem", id]);
+      if (!cached?.id) {
+        throw new Error("Postmortem ID unavailable — please refresh and try again");
+      }
+      return api.updatePostmortem(cached.id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["postmortem", id] });
+      setIsEditingPIR(false);
+      toast.success("Post-incident review updated");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update review");
+    },
+  });
+
+  const durationMinutes = incident?.resolved_at && incident?.detected_at
+    ? Math.round((new Date(incident.resolved_at).getTime() - new Date(incident.detected_at).getTime()) / 60000)
+    : 0;
 
   if (isLoading) {
     return (
@@ -310,6 +360,73 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             </Card>
           </div>
         </div>
+
+        {/* Post-Incident Review Section */}
+        {incident.status === "resolved" && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-purple-500 fill-purple-500/10" />
+                <h2 className="text-xl font-bold tracking-tight">Post-Incident Review</h2>
+              </div>
+              {postmortem && !isEditingPIR && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditingPIR(true)}
+                  disabled={updatePostmortemMutation.isPending}
+                >
+                  Edit PIR
+                </Button>
+              )}
+            </div>
+
+            {!postmortem && !showPIRForm && (
+              <div className="text-center py-12 border-2 border-dashed rounded-3xl bg-muted/20">
+                <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-3 opacity-20" />
+                <p className="text-sm text-muted-foreground mb-4">
+                  Document what happened and how to prevent it next time
+                </p>
+                <Button onClick={() => setShowPIRForm(true)} className="gap-2">
+                  <FileText className="h-4 w-4" />
+                  Write Post-Incident Review
+                </Button>
+              </div>
+            )}
+
+            {(showPIRForm || isEditingPIR) && (
+              <Card className="border-border/50 bg-card/50">
+                <CardContent className="pt-6">
+                  <PostIncidentReviewForm
+                    incidentId={id}
+                    durationMinutes={durationMinutes}
+                    initialData={isEditingPIR ? postmortem : undefined}
+                    isEditing={isEditingPIR}
+                    onSubmit={async (data) => {
+                      if (isEditingPIR && postmortem) {
+                        await updatePostmortemMutation.mutateAsync(data);
+                      } else {
+                        await createPostmortemMutation.mutateAsync(data);
+                      }
+                    }}
+                    onCancel={() => {
+                      setShowPIRForm(false);
+                      setIsEditingPIR(false);
+                    }}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {postmortem && !isEditingPIR && (
+              <Card className="border-border/50 bg-card/50">
+                <CardContent className="pt-6">
+                  <PostIncidentReviewDisplay postmortem={postmortem} />
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );

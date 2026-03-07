@@ -248,9 +248,12 @@ class BlastRadiusCalculator:
         Returns:
             Blast score 0.0-1.0
         """
-        # Downstream impact (normalize to 0-1)
-        # 0 services = 0.0, 10+ services = 1.0
-        downstream_score = min(1.0, downstream_count / 10.0)
+        # Downstream impact (normalize to 0-1), amplified by service criticality.
+        # A critical shared-infrastructure service (e.g. a tier-0 database) has
+        # a much higher blast radius per dependent than a low-criticality edge service.
+        criticality_weights = {"low": 0.7, "medium": 1.0, "high": 1.3, "critical": 1.6}
+        crit_mult = criticality_weights.get(criticality, 1.0)
+        downstream_score = min(1.0, (downstream_count * crit_mult) / 10.0)
 
         # Request volume impact (normalize to 0-1)
         # 0 RPS = 0.0, 100+ RPS = 1.0

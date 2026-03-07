@@ -12,6 +12,17 @@ from app.models.incident import Incident, IncidentStatus
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Item 6: Cold-start seed patterns
+# ---------------------------------------------------------------------------
+# Pre-loaded failure pattern library providing non-zero confidence adjustments
+# before any real incidents have been resolved.  Represents established SRE
+# domain knowledge.  occurrence_count=0 signals "synthetic" — real patterns
+# from the DB always take precedence (see get_confidence_adjustment below).
+# ---------------------------------------------------------------------------
+_SEED_PATTERNS: dict[str, "PatternSignature"] = {}  # populated after class definition
+
+
 class IncidentOutcome(BaseModel):
     """Captured outcome of an incident resolution."""
 
@@ -38,6 +49,66 @@ class PatternSignature(BaseModel):
     )
     occurrence_count: int = Field(default=1, description="How many times this pattern occurred")
     success_rate: float = Field(default=0.0, ge=0.0, le=1.0, description="Resolution success rate")
+
+
+# Seed patterns are defined here (after PatternSignature class) so forward
+# reference in the dict type annotation above resolves cleanly.
+_SEED_PATTERNS = {
+    "database_issue": PatternSignature(
+        pattern_id="__seed__:database_issue",
+        name="DB Connection Exhaustion (seed)",
+        category="database_issue",
+        signal_indicators=["db_connections_used", "query_latency_p99", "connection_pool_wait"],
+        confidence_adjustment=0.05,
+        occurrence_count=0,
+        success_rate=0.0,
+    ),
+    "memory_leak": PatternSignature(
+        pattern_id="__seed__:memory_leak",
+        name="Memory Leak / OOM (seed)",
+        category="memory_leak",
+        signal_indicators=["memory_usage_bytes", "heap_used", "gc_pause_seconds"],
+        confidence_adjustment=0.05,
+        occurrence_count=0,
+        success_rate=0.0,
+    ),
+    "cpu_spike": PatternSignature(
+        pattern_id="__seed__:cpu_spike",
+        name="CPU Saturation (seed)",
+        category="cpu_spike",
+        signal_indicators=["cpu_usage_percent", "load_average", "context_switches"],
+        confidence_adjustment=0.03,
+        occurrence_count=0,
+        success_rate=0.0,
+    ),
+    "traffic_spike": PatternSignature(
+        pattern_id="__seed__:traffic_spike",
+        name="Unexpected Traffic Surge (seed)",
+        category="traffic_spike",
+        signal_indicators=["http_requests_total", "rps", "queue_depth"],
+        confidence_adjustment=0.05,
+        occurrence_count=0,
+        success_rate=0.0,
+    ),
+    "network_issue": PatternSignature(
+        pattern_id="__seed__:network_issue",
+        name="Network / DNS Failure (seed)",
+        category="network_issue",
+        signal_indicators=["tcp_retransmits", "dns_error_rate", "connection_refused"],
+        confidence_adjustment=0.02,
+        occurrence_count=0,
+        success_rate=0.0,
+    ),
+    "error_spike": PatternSignature(
+        pattern_id="__seed__:error_spike",
+        name="Error Rate Spike (seed)",
+        category="error_spike",
+        signal_indicators=["http_5xx_rate", "error_count", "exception_rate"],
+        confidence_adjustment=0.04,
+        occurrence_count=0,
+        success_rate=0.0,
+    ),
+}
 
 
 class LearningEngine:
@@ -135,6 +206,45 @@ class LearningEngine:
                     f"(hypothesis_correct={outcome.hypothesis_correct}, "
                     f"action_effective={outcome.action_effective})"
                 )
+
+                # Stage 11: Re-embed resolved incident with outcome context so future
+                # similar incidents retrieve richer RAG context (root cause + resolution).
+                if outcome.hypothesis_correct:
+                    try:
+                        # Fetch postmortem for resolution details (best-effort)
+                        from sqlalchemy import select as sa_select
+                        from app.models.postmortem import Postmortem
+                        pm_stmt = sa_select(Postmortem).where(
+                            Postmortem.incident_id == outcome.incident_id
+                        )
+                        pm_result = await db.execute(pm_stmt)
+                        postmortem = pm_result.scalar_one_or_none()
+
+                        extra_context: dict = {}
+                        if postmortem:
+                            if postmortem.actual_root_cause:
+                                extra_context["actual_root_cause"] = postmortem.actual_root_cause
+                            # Use top lesson as resolution context (postmortem has no
+                            # resolution_summary field — lessons_learned is the closest proxy)
+                            if postmortem.lessons_learned:
+                                extra_context["resolution"] = "; ".join(
+                                    postmortem.lessons_learned[:2]
+                                )
+
+                        from app.worker.tasks.embedding import embed_incident_task
+                        embed_incident_task.delay(
+                            str(outcome.incident_id),
+                            extra_context if extra_context else None,
+                        )
+                        logger.info(
+                            f"Enqueued re-embedding for resolved incident {outcome.incident_id}"
+                            f"{' with postmortem context' if extra_context else ''}"
+                        )
+                    except Exception as embed_exc:
+                        # Non-fatal — embedding failure must not break outcome capture
+                        logger.warning(
+                            f"Failed to enqueue re-embedding for {outcome.incident_id}: {embed_exc}"
+                        )
 
         except Exception as e:
             logger.error(f"Failed to capture outcome: {str(e)}", exc_info=True)
@@ -329,13 +439,20 @@ class LearningEngine:
         """
         Get confidence adjustment for a hypothesis based on historical patterns.
 
+        Lookup order:
+        1. Real pattern from DB (occurrence_count > 0) — authoritative
+        2. Seed pattern for the category — cold-start fallback
+        3. Zero — no information available
+
         Returns:
             Confidence adjustment (-0.5 to +0.5)
         """
         pattern = await self.get_pattern(service, category)
-        if pattern:
+        if pattern and pattern.occurrence_count > 0:
             return pattern.confidence_adjustment
-        return 0.0
+        # Cold-start: no real history yet — fall back to domain-knowledge seed
+        seed = _SEED_PATTERNS.get(category)
+        return seed.confidence_adjustment if seed else 0.0
 
     async def generate_insights(self, days: int = 30) -> dict:
         """
@@ -346,7 +463,7 @@ class LearningEngine:
         """
         try:
             async with get_db_context() as db:
-                from sqlalchemy import func, select
+                from sqlalchemy import Text, cast, func, select
 
                 # Get incidents from last N days
                 since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -419,6 +536,50 @@ class LearningEngine:
                 result = await db.execute(stmt)
                 successful_actions = result.scalar_one()
 
+                # Item 7: Top-1 hypothesis accuracy (was the rank-1 hypothesis correct?)
+                stmt = (
+                    select(func.count())
+                    .select_from(Hypothesis)
+                    .join(Incident, Hypothesis.incident_id == Incident.id)
+                    .where(
+                        Hypothesis.validated == True,  # noqa: E712
+                        Hypothesis.rank == 1,
+                        Incident.detected_at >= since,
+                    )
+                )
+                result = await db.execute(stmt)
+                top1_correct = result.scalar_one()
+
+                # Denominator: rank-1 hypotheses that were validated (either way)
+                stmt = (
+                    select(func.count())
+                    .select_from(Hypothesis)
+                    .join(Incident, Hypothesis.incident_id == Incident.id)
+                    .where(
+                        Hypothesis.rank == 1,
+                        Hypothesis.validated.isnot(None),
+                        Incident.detected_at >= since,
+                    )
+                )
+                result = await db.execute(stmt)
+                top1_validated_total = result.scalar_one()
+
+                top1_accuracy = (
+                    top1_correct / top1_validated_total if top1_validated_total > 0 else None
+                )
+
+                # Similarity reuse count — incidents where LLM was skipped
+                stmt = (
+                    select(func.count())
+                    .select_from(Incident)
+                    .where(
+                        cast(Incident.context, Text).contains("similarity_skip"),
+                        Incident.detected_at >= since,
+                    )
+                )
+                result = await db.execute(stmt)
+                similarity_reuse_count = result.scalar_one()
+
                 return {
                     "period_days": days,
                     "total_incidents": total_incidents,
@@ -431,8 +592,12 @@ class LearningEngine:
                     "hypothesis_accuracy": hypothesis_accuracy,
                     "total_hypotheses": total_hypotheses,
                     "correct_hypotheses": correct_hypotheses,
+                    "top1_accuracy": top1_accuracy,
+                    "top1_accuracy_sample_size": top1_validated_total,
+                    "similarity_reuse_count": similarity_reuse_count,
                     "successful_actions": successful_actions,
                     "patterns_learned": len(self.patterns),
+                    "seed_patterns_available": len(_SEED_PATTERNS),
                 }
 
         except Exception as e:

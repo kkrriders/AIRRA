@@ -146,6 +146,20 @@ class Settings(BaseSettings):
         description="Low confidence threshold for human escalation"
     )
 
+    # RAG Similarity Skip
+    similarity_skip_threshold: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Multi-signal composite confidence threshold (0–1) above which LLM analysis "
+            "is skipped and the past incident's resolution is reused. "
+            "Composite = 0.5×vector_similarity + 0.3×service_match + 0.2×metric_overlap. "
+            "Default 0.75 requires strong agreement across all three signals. "
+            "Set AIRRA_SIMILARITY_SKIP_THRESHOLD to tune."
+        ),
+    )
+
     # Execution
     dry_run_mode: bool = Field(
         default=True,
@@ -208,6 +222,13 @@ class Settings(BaseSettings):
     frontend_url: str = Field(
         default="http://localhost:3000",
         description="Frontend URL for generating links in notifications"
+    )
+    slack_webhook_url: str = Field(
+        default="",
+        description=(
+            "Slack Incoming Webhook URL for incident notifications. "
+            "Set AIRRA_SLACK_WEBHOOK_URL to enable. Empty = disabled (simulation mode)."
+        ),
     )
 
     @field_validator("cors_origins")

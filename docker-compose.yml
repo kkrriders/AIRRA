@@ -1,7 +1,4 @@
-# Shared environment block for backend, celery-worker, and celery-beat.
-# Add new env vars here once to propagate to all three services automatically.
-# x-* keys are Docker Compose extension fields — ignored by Compose at root level,
-# valid only here (NOT under services:).
+
 x-backend-env: &backend-env
   AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
   AIRRA_REDIS_URL: redis://redis:6379/0
@@ -9,17 +6,18 @@ x-backend-env: &backend-env
   AIRRA_ENVIRONMENT: development
   AIRRA_DEBUG: "true"
   AIRRA_LOG_LEVEL: INFO
-  AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
+  AIRRA_API_KEY: ${AIRRA_API_KEY}
   AIRRA_LLM_PROVIDER: groq
   AIRRA_LLM_MODEL: llama-3.3-70b-versatile        # reasoning tasks (analysis, hypotheses)
   AIRRA_LLM_GENERATOR_MODEL: llama-3.1-8b-instant # creative tasks (AI incident gen) — Groq free tier
-  # Groq API key (uses OPENAI_API_KEY for compatibility)
+ 
   AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
+  AIRRA_SLACK_WEBHOOK_URL: ${AIRRA_SLACK_WEBHOOK_URL:-}
 
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: airra-postgres
     environment:
       POSTGRES_USER: airra
@@ -69,10 +67,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-shot migration runner — all services that need the DB wait for this to
-  # complete successfully before starting. Runs 'alembic upgrade head' once per
-  # compose up. This prevents concurrent migration conflicts when multiple
-  # replicas try to migrate simultaneously (I3 fix).
+ 
   db-migrate:
     build:
       context: ./backend
@@ -82,15 +77,13 @@ services:
     environment:
       AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
       AIRRA_REDIS_URL: redis://redis:6379/0
-      AIRRA_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
+      AIRRA_API_KEY: ${AIRRA_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
 
-  # AIRRA Backend API
-  # NOTE: 'command' overrides entrypoint.sh for hot-reload in development.
-  # Migrations are handled by db-migrate above, not by this container.
+
   backend:
     build:
       context: ./backend
@@ -111,15 +104,16 @@ services:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Celery worker — processes analysis tasks (queue: analysis) and monitoring
-  # one-shots (queue: celery). Separate queues prevent slow LLM calls from
-  # starving fast monitoring tasks (S2 fix).
+
   celery-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: airra-celery-worker
-    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4 -Q celery,analysis
+    # Handles high-frequency tasks: anomaly checks, embeddings, escalation checks.
+    # Kept separate from the analysis queue so fast monitoring tasks are never
+    # starved behind slow 3-8s LLM calls (and vice versa).
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4 -Q celery
     environment:
       <<: *backend-env
     depends_on:
@@ -136,10 +130,31 @@ services:
       retries: 3
       start_period: 20s
 
-  # Celery Beat scheduler — uses redbeat.RedBeatScheduler (state in Redis) so
-  # schedule timestamps survive container restarts without firing all tasks
-  # immediately (C3 fix). NEVER scale past 1 replica — duplicate Beat instances
-  # produce duplicate tasks on every schedule tick.
+  celery-analysis:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: airra-celery-analysis
+    # Dedicated pool for LLM analysis tasks (3-8s each).
+    # concurrency=2 caps parallel LLM calls to avoid saturating the free-tier
+    # API rate limit while still allowing pipelined analysis on burst incidents.
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2 -Q analysis
+    environment:
+      <<: *backend-env
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.worker.celery_app", "inspect", "ping", "--timeout=10"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+
   celery-beat:
     build:
       context: ./backend
@@ -156,9 +171,7 @@ services:
     volumes:
       - ./backend:/app
     healthcheck:
-      # Beat is a scheduler, not a worker — it does not respond to 'inspect ping'
-      # (that command only reaches worker processes). Check for the beat process
-      # directly instead.
+   
       test: ["CMD-SHELL", "pgrep -f 'celery.*beat' > /dev/null"]
       interval: 30s
       timeout: 10s
@@ -173,7 +186,7 @@ services:
     container_name: airra-frontend
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_API_KEY: ${AIRRA_API_KEY:-dev-test-key-12345}
+      NEXT_PUBLIC_API_KEY: ${AIRRA_API_KEY}
     ports:
       - "3000:3000"
     depends_on:

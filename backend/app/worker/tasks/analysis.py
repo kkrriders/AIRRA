@@ -22,11 +22,62 @@ from app.models.action import Action, ActionStatus
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
 from app.models.postmortem import Postmortem
+from app.services.dependency_graph import get_dependency_graph
+from app.services.embedding_service import get_embedding_service
 from app.services.llm_client import get_llm_client
 from app.services.prometheus_client import get_prometheus_client
 from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
+
+
+def _compute_match_confidence(
+    current_service: str,
+    current_metric_names: frozenset,
+    past_incident: "Incident",
+    vector_distance: float,
+) -> float:
+    """
+    Multi-signal composite confidence that a past incident matches the current one.
+
+    Components (weighted sum):
+    - Vector similarity  (50%): semantic closeness of incident descriptions.
+      Derived from cosine distance ∈ [0,2] → similarity ∈ [0,1].
+    - Service match      (30%): same service = 1.0, topologically related = 0.5,
+      unrelated = 0.0.  Using the dependency graph avoids penalising cascading
+      failures where a DB outage manifests in multiple upstream services.
+    - Metric overlap     (20%): Jaccard similarity of anomaly metric names.
+      Two incidents with different dominant metrics are unlikely to share a root cause
+      even if their text descriptions are similar.
+
+    Returns 0.0–1.0.  Compare against settings.similarity_skip_threshold.
+    """
+    # 1. Vector similarity
+    vector_sim = max(0.0, 1.0 - vector_distance / 2.0)
+
+    # 2. Service match
+    if current_service == past_incident.affected_service:
+        service_match = 1.0
+    else:
+        try:
+            dep_graph = get_dependency_graph()
+            if dep_graph.is_upstream_of(current_service, past_incident.affected_service) \
+                    or dep_graph.is_upstream_of(past_incident.affected_service, current_service):
+                service_match = 0.5
+            else:
+                service_match = 0.0
+        except Exception:
+            service_match = 0.0
+
+    # 3. Metric overlap (Jaccard similarity)
+    past_metrics: frozenset = frozenset((past_incident.metrics_snapshot or {}).keys())
+    if current_metric_names or past_metrics:
+        union = len(current_metric_names | past_metrics)
+        metric_overlap = len(current_metric_names & past_metrics) / union if union > 0 else 0.0
+    else:
+        metric_overlap = 0.5  # No metrics on either side — neutral
+
+    return (vector_sim * 0.5) + (service_match * 0.3) + (metric_overlap * 0.2)
 
 
 @celery_app.task(
@@ -135,27 +186,145 @@ async def _run_analysis(incident_id: str) -> dict:
                 incident.status = IncidentStatus.FAILED
                 return {"status": "no_anomalies", "message": "No current anomalies — incident needs manual review"}
 
-            # Fetch past resolved incidents for the same service (RAG-lite context)
-            past_stmt = (
-                select(Incident, Postmortem)
-                .join(Postmortem, Postmortem.incident_id == Incident.id)
-                .where(
-                    Incident.affected_service == incident.affected_service,
-                    Incident.status == IncidentStatus.RESOLVED,
-                    Incident.id != incident.id,
+            # --- Stage 6-7: Semantic similarity retrieval via pgvector ---
+            # Generate embedding for the current incident (uses IncidentSummarizer
+            # internally — no LLM call, just structured text + sentence-transformers).
+            embedding_service = get_embedding_service()
+            try:
+                query_embedding = embedding_service.embed_incident(incident)
+                incident.embedding = query_embedding
+                # Persist the embedding now so future incidents can retrieve this one
+                # (don't wait for the background embed_incident_task which may not run
+                #  until after we need the embedding for retrieval here).
+            except Exception as embed_exc:
+                logger.warning(f"Could not generate embedding for {incident_id}: {embed_exc}")
+                query_embedding = None
+
+            past_context: list[dict] = []
+            if query_embedding is not None:
+                # --- Item 5: Hybrid retrieval — fetch wider candidate pool ---
+                # Fetch 10 candidates by vector distance, then re-rank by composite
+                # score (vector + service match + metric overlap) to improve precision.
+                similar_stmt = (
+                    select(
+                        Incident,
+                        Postmortem,
+                        Incident.embedding.cosine_distance(query_embedding).label("distance"),
+                    )
+                    .join(Postmortem, Postmortem.incident_id == Incident.id)
+                    .where(
+                        Incident.status == IncidentStatus.RESOLVED,
+                        Incident.id != incident.id,
+                        Incident.embedding.isnot(None),
+                        # Exclude AI-generated incidents: fictional root causes corrupt RAG
+                        Incident.detection_source != "ai_generator",
+                    )
+                    .order_by(Incident.embedding.cosine_distance(query_embedding))
+                    .limit(10)  # wider pool; composite scoring selects top-3 for LLM
                 )
-                .order_by(Incident.resolved_at.desc())
-                .limit(3)
-            )
-            past_result = await db.execute(past_stmt)
-            past_context = [
-                {
-                    "title": row.Incident.title,
-                    "root_cause": row.Postmortem.actual_root_cause,
-                    "resolved_at": row.Incident.resolved_at.isoformat() if row.Incident.resolved_at else None,
-                }
-                for row in past_result.all()
-            ]
+                similar_result = await db.execute(similar_stmt)
+                similar_rows = similar_result.all()
+
+                if similar_rows:
+                    # --- Items 1 & 4: Composite match confidence ---
+                    # Re-rank candidates by multi-signal composite confidence so that
+                    # a strong vector match from the wrong service is ranked below a
+                    # moderate vector match from the same service with matching metrics.
+                    current_metric_names: frozenset = frozenset(
+                        a.metric_name for a in anomalies
+                    )
+                    scored_rows = sorted(
+                        [
+                            (
+                                _compute_match_confidence(
+                                    current_service=incident.affected_service,
+                                    current_metric_names=current_metric_names,
+                                    past_incident=row.Incident,
+                                    vector_distance=row.distance or 1.0,
+                                ),
+                                row,
+                            )
+                            for row in similar_rows
+                        ],
+                        key=lambda t: t[0],
+                        reverse=True,
+                    )
+
+                    top_composite, top_row = scored_rows[0]
+
+                    # --- Stage 12 (updated): Cost optimisation — composite skip ---
+                    # Only reuse past resolution when ALL three signals agree
+                    # (composite >= threshold).  Pure vector similarity alone can
+                    # match incidents with similar descriptions but different root
+                    # causes (e.g. two services with same title, different upstreams).
+                    if top_composite >= settings.similarity_skip_threshold:
+                        logger.info(
+                            f"Incident {incident_id}: composite confidence {top_composite:.2f} "
+                            f"(threshold {settings.similarity_skip_threshold}) matches "
+                            f"{top_row.Incident.id} — skipping LLM, reusing past resolution"
+                        )
+                        incident.context = {
+                            **(incident.context or {}),
+                            "similarity_skip": {
+                                "source_incident_id": str(top_row.Incident.id),
+                                "vector_distance": round(top_row.distance or 1.0, 4),
+                                "composite_confidence": round(top_composite, 3),
+                                "root_cause_reused": top_row.Postmortem.actual_root_cause,
+                            },
+                        }
+                        incident.status = IncidentStatus.PENDING_APPROVAL
+                        return {
+                            "status": "similarity_skip",
+                            "source_incident": str(top_row.Incident.id),
+                            "composite_confidence": round(top_composite, 3),
+                        }
+
+                    # Pass top-3 (by composite score) as RAG context for LLM
+                    past_context = [
+                        {
+                            "title": row.Incident.title,
+                            "root_cause": row.Postmortem.actual_root_cause,
+                            "resolved_at": (
+                                row.Incident.resolved_at.isoformat()
+                                if row.Incident.resolved_at
+                                else None
+                            ),
+                            "composite_confidence": round(composite, 3),
+                        }
+                        for composite, row in scored_rows[:3]
+                    ]
+                    logger.info(
+                        f"Hybrid retrieval found {len(similar_rows)} candidates, "
+                        f"top-3 selected (composite scores: "
+                        f"{[round(s, 2) for s, _ in scored_rows[:3]]}) for {incident_id}"
+                    )
+            else:
+                # Fallback: same-service time-sort when embedding unavailable
+                fallback_stmt = (
+                    select(Incident, Postmortem)
+                    .join(Postmortem, Postmortem.incident_id == Incident.id)
+                    .where(
+                        Incident.affected_service == incident.affected_service,
+                        Incident.status == IncidentStatus.RESOLVED,
+                        Incident.id != incident.id,
+                    )
+                    .order_by(Incident.resolved_at.desc())
+                    .limit(3)
+                )
+                fallback_result = await db.execute(fallback_stmt)
+                past_context = [
+                    {
+                        "title": row.Incident.title,
+                        "root_cause": row.Postmortem.actual_root_cause,
+                        "resolved_at": (
+                            row.Incident.resolved_at.isoformat()
+                            if row.Incident.resolved_at
+                            else None
+                        ),
+                    }
+                    for row in fallback_result.all()
+                ]
+                logger.info(f"Embedding unavailable — using fallback time-sort retrieval for {incident_id}")
 
             # Generate hypotheses via LLM
             llm_client = get_llm_client()

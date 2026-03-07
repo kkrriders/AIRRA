@@ -223,11 +223,32 @@ def calculate_hypothesis_confidence(
         anomaly_score * 0.25
     )
 
-    # TODO: topology-aware confidence boost — implement once SignalCorrelator
-    # provides cross-service dependency data. dep_graph.calculate_dependency_boost()
-    # exists but the condition (hypothesis_service != affected_service) was always
-    # False because hypothesis_service was incorrectly set to affected_service.
-    # Removed dead code to keep the formula honest.
+    # Topology-aware confidence boost: some hypothesis categories are more credible
+    # when the affected service's upstream graph confirms the dependency exists.
+    # This replaces the dead code noted above — we infer the "hypothesis service"
+    # from the category rather than requiring an explicit service name from the LLM.
+    if affected_service:
+        try:
+            from app.services.dependency_graph import get_dependency_graph
+            dep_graph = get_dependency_graph()
+            svc_info = dep_graph.get_service_info(affected_service)
+            if svc_info and svc_info.depends_on:
+                upstream_str = " ".join(svc_info.depends_on).lower()
+                # DB issue is more credible if service has a database upstream
+                if hypothesis.category == "database_issue" and any(
+                    kw in upstream_str for kw in ("database", "postgres", "mysql", "mongo", "db")
+                ):
+                    final_confidence += 0.08
+                # Cache issue more credible if service depends on Redis/Memcached
+                elif hypothesis.category in ("latency_spike", "error_spike") and any(
+                    kw in upstream_str for kw in ("redis", "cache", "memcached")
+                ):
+                    final_confidence += 0.05
+                # Network issue more credible for services with many upstream deps (more hops)
+                elif hypothesis.category == "network_issue" and len(svc_info.depends_on) >= 3:
+                    final_confidence += 0.05
+        except Exception:
+            pass  # dep graph unavailable — non-fatal, skip boost
 
     # Apply learned pattern adjustment from historical outcomes
     # Positive when this service:category has resolved correctly before, negative otherwise
@@ -437,7 +458,7 @@ Anomaly #{i}:
 
         # Add historical incident context (RAG-lite: past resolved incidents for same service)
         if past_context:
-            prompt_parts.extend(["", "## Historical Context (Past Incidents — Same Service)", ""])
+            prompt_parts.extend(["", "## Historical Context (Past Resolved Incidents)", ""])
             for i, past in enumerate(past_context, 1):
                 safe_title = sanitize_context_value(past.get("title", "Unknown"))
                 safe_cause = sanitize_context_value(past.get("root_cause", "Unknown"))
@@ -451,6 +472,40 @@ Anomaly #{i}:
                 "Use this history to inform your hypotheses. If a pattern recurs, "
                 "flag it explicitly."
             )
+
+        # Auto-enrich with service topology for causal reasoning.
+        # Injecting dependency graph context at inference time is cheaper and more
+        # maintainable than fine-tuning — the YAML config file can be updated without
+        # any model changes (Item 3: Service Dependency Graph).
+        try:
+            from app.services.dependency_graph import get_dependency_graph
+            dep_graph = get_dependency_graph()
+            upstream = dep_graph.get_upstream_dependencies(service_name)
+            svc_info = dep_graph.get_service_info(service_name)
+            if upstream or svc_info:
+                prompt_parts.extend(["", "## Service Topology", ""])
+                if upstream:
+                    prompt_parts.append(
+                        f"**Upstream dependencies of {safe_service_name}:** "
+                        f"{', '.join(upstream)}"
+                    )
+                    prompt_parts.append(
+                        "  → Failures in these services can cascade downstream. "
+                        "Consider them as potential root causes."
+                    )
+                if svc_info and svc_info.depended_by:
+                    downstream = svc_info.depended_by[:5]
+                    prompt_parts.append(
+                        f"**Services depending on {safe_service_name} (blast radius):** "
+                        f"{', '.join(downstream)}"
+                    )
+                if svc_info:
+                    prompt_parts.append(
+                        f"**Service tier:** {svc_info.tier or 'unknown'}  "
+                        f"**Criticality:** {svc_info.criticality}"
+                    )
+        except Exception:
+            pass  # dep graph unavailable — non-fatal
 
         # Add task instruction
         prompt_parts.extend(

@@ -62,6 +62,10 @@ async def create_incident(
         extra={"incident_id": str(incident.id), "service": incident.affected_service},
     )
 
+    # Stage 6: Enqueue embedding generation asynchronously
+    from app.worker.tasks.embedding import embed_incident_task
+    embed_incident_task.delay(str(incident.id))
+
     return incident
 
 

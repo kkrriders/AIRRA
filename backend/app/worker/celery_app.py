@@ -13,8 +13,9 @@ from celery import Celery
 from app.config import settings
 
 # Named constants for Beat schedule intervals (N5)
-ANOMALY_CHECK_INTERVAL_SECONDS: float = 60.0      # every minute
-AI_GENERATOR_INTERVAL_SECONDS: float = 30 * 60.0  # every 30 minutes (free-tier safe)
+ANOMALY_CHECK_INTERVAL_SECONDS: float = 60.0       # every minute
+AI_GENERATOR_INTERVAL_SECONDS: float = 30 * 60.0   # every 30 minutes (free-tier safe)
+ESCALATION_CHECK_INTERVAL_SECONDS: float = 10 * 60.0  # every 10 minutes
 
 celery_app = Celery(
     "airra",
@@ -53,6 +54,10 @@ celery_app.conf.update(
         "ai-incident-generator": {
             "task": "app.worker.tasks.monitoring.run_ai_generator",
             "schedule": AI_GENERATOR_INTERVAL_SECONDS,
+        },
+        "escalation-check": {
+            "task": "app.worker.tasks.monitoring.run_escalation_check",
+            "schedule": ESCALATION_CHECK_INTERVAL_SECONDS,
         },
     },
 )

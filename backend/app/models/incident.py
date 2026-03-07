@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -107,6 +108,15 @@ class Incident(Base, TimestampMixin):
         Text,
         nullable=True,
         comment="Summary of how incident was resolved",
+    )
+
+    # Semantic embedding for similarity search (pgvector)
+    # Populated asynchronously by the embed_incident Celery task after creation.
+    # Nullable — incidents created before embeddings were wired will have NULL.
+    embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(384),
+        nullable=True,
+        comment="384-dim all-MiniLM-L6-v2 embedding for semantic similarity search",
     )
 
     # Flexible metadata storage

@@ -110,7 +110,7 @@ class NotificationService:
         token, expires_at = token_service.generate_token(
             notification.id,
             engineer_id,
-            expiry_hours=1,
+            expiry_hours=4,
         )
         notification.acknowledgement_token = token
         notification.token_expires_at = expires_at
@@ -314,10 +314,15 @@ This is an automated notification. Do not reply to this email directly.
         engineer: Engineer,
         incident: Incident,
     ) -> bool:
-        """Send Slack notification via webhook."""
+        """Send Slack notification via Incoming Webhook.
+
+        Uses AIRRA_SLACK_WEBHOOK_URL from settings. If the URL is empty,
+        falls back to simulation mode (logs the payload, returns True).
+        """
+        import httpx
+
         try:
-            # TODO: Configure Slack webhook URL in settings
-            _webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+            webhook_url = settings.slack_webhook_url
 
             # Generate admin panel URL
             admin_url, _ = token_service.generate_admin_panel_url(
@@ -325,24 +330,27 @@ This is an automated notification. Do not reply to this email directly.
                 engineer.id,
             )
 
-            # Build Slack message
-            _slack_message = {
-                "text": f"🚨 Incident Alert: {incident.title}",
+            # Block-Kit payload — works with Slack's Incoming Webhooks API
+            slack_payload = {
+                "text": f"Incident Alert: {incident.title}",
                 "blocks": [
                     {
                         "type": "header",
                         "text": {
                             "type": "plain_text",
-                            "text": f"🚨 {notification.subject}",
+                            "text": f"{notification.subject}",
                         },
                     },
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"*Service:* {incident.affected_service}\n"
-                            f"*Severity:* {incident.severity.value.upper()}\n"
-                            f"*Status:* {incident.status.value}",
+                            "text": (
+                                f"*Service:* {incident.affected_service}\n"
+                                f"*Severity:* {incident.severity.value.upper()}\n"
+                                f"*Status:* {incident.status.value}\n"
+                                f"*Assigned to:* {engineer.name}"
+                            ),
                         },
                     },
                     {
@@ -359,16 +367,29 @@ This is an automated notification. Do not reply to this email directly.
                 ],
             }
 
+            if not webhook_url:
+                # Simulation mode — log the payload for development visibility
+                logger.info(
+                    f"[SLACK SIMULATION] Would POST to Slack webhook for "
+                    f"{notification.recipient_address} — "
+                    f"set AIRRA_SLACK_WEBHOOK_URL to enable real delivery\n"
+                    f"Payload text: {slack_payload['text']}"
+                )
+                return True
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    webhook_url,
+                    json=slack_payload,
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+
             logger.info(
-                f"[SLACK SIMULATION] Would send Slack message to {notification.recipient_address}"
+                f"Slack notification sent to {notification.recipient_address} "
+                f"(HTTP {response.status_code})"
             )
-
-            # Uncomment for actual Slack sending:
-            # async with httpx.AsyncClient() as client:
-            #     response = await client.post(webhook_url, json=slack_message)
-            #     response.raise_for_status()
-
-            return True  # Simulate success
+            return True
 
         except Exception as e:
             logger.error(f"Slack send failed: {e}", exc_info=True)

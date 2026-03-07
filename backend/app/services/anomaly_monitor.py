@@ -234,6 +234,35 @@ class AnomalyMonitor:
                 incident_context["correlation_confidence"] = round(correlation.confidence, 4)
                 incident_context["correlated_signal_count"] = len(correlation.signals)
 
+            # Service dependency context — enriches incident embedding + LLM prompt
+            try:
+                from app.services.dependency_graph import get_dependency_graph
+                dep_graph = get_dependency_graph()
+                upstream = dep_graph.get_upstream_dependencies(service_name)
+                if upstream:
+                    incident_context["upstream_dependencies"] = upstream
+                svc_info = dep_graph.get_service_info(service_name)
+                if svc_info:
+                    incident_context["service_criticality"] = svc_info.criticality
+                    if svc_info.tier:
+                        incident_context["service_tier"] = svc_info.tier
+            except Exception as dep_exc:
+                logger.debug(f"Dependency graph lookup failed for {service_name}: {dep_exc}")
+
+            # Wire blast radius (best-effort — failure must never block incident creation)
+            try:
+                from app.core.decision.blast_radius import get_blast_radius_calculator
+                blast_calc = get_blast_radius_calculator(get_prometheus_client())
+                assessment = await blast_calc.calculate_blast_radius(service_name)
+                incident_context["blast_radius"] = {
+                    "level": assessment.level.value,
+                    "score": round(assessment.score, 3),
+                    "affected_services_count": assessment.affected_services_count,
+                    "urgency_multiplier": round(assessment.urgency_multiplier, 2),
+                }
+            except Exception as blast_exc:
+                logger.warning(f"Blast radius calculation failed for {service_name}: {blast_exc}")
+
             # Create incident
             async with get_db_context() as db:
                 incident = Incident(
@@ -258,14 +287,10 @@ class AnomalyMonitor:
                     f"(severity: {severity.value}, anomalies: {len(anomalies)})"
                 )
 
-                # Optionally trigger automatic analysis
-                if settings.environment == "production":
-                    # In production, you might want to trigger analysis immediately
-                    # for high-severity incidents
-                    if severity in [IncidentSeverity.CRITICAL, IncidentSeverity.HIGH]:
-                        logger.info(f"Auto-triggering analysis for incident {incident.id}")
-                        # TODO: Trigger analysis asynchronously
-                        # await trigger_incident_analysis(incident.id)
+                # Stage 6: Generate embedding asynchronously so future vector search
+                # can retrieve this incident as a past case.
+                from app.worker.tasks.embedding import embed_incident_task
+                embed_incident_task.delay(str(incident.id))
 
         except Exception as e:
             logger.error(f"Failed to create incident for {service_name}: {str(e)}")

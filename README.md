@@ -2,6 +2,8 @@
 
 > AI-powered incident management platform that detects anomalies, generates root-cause hypotheses via semantic RAG, recommends remediation actions, and learns from every resolution — all with a human-in-the-loop approval gate.
 
+[![CI](https://github.com/kkrriders/AIRRA/actions/workflows/ci.yml/badge.svg)](https://github.com/kkrriders/AIRRA/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/kkrriders/AIRRA/graph/badge.svg)](https://codecov.io/gh/kkrriders/AIRRA)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+pgvector-336791?logo=postgresql&logoColor=white)
@@ -493,8 +495,8 @@ AIRRA/
 │   │   ├── core/
 │   │   │   ├── perception/            # Anomaly detection, signal correlator
 │   │   │   ├── reasoning/             # Hypothesis generator, LLM prompting
-│   │   │   ├── decision/              # Blast radius, action selection, policy engine
-│   │   │   ├── execution/             # Action executors (Kubernetes, scaling, rollback)
+│   │   │   ├── decision/              # Blast radius, action selection
+│   │   │   ├── execution/             # Action executors (Kubernetes, scaling)
 │   │   │   └── simulation/            # Static scenario runner
 │   │   ├── models/                    # SQLAlchemy ORM models
 │   │   │   ├── incident.py            # Incident + Vector(384) embedding + trust_score
@@ -525,6 +527,10 @@ AIRRA/
 │   │   ├── 007_add_incident_embeddings.py  # pgvector extension + HNSW index
 │   │   ├── 008_add_trust_score.py          # incidents.trust_score NUMERIC(3,2)
 │   │   └── 009_add_agent_audit_logs.py     # agent_audit_logs table (append-only)
+│   ├── docs/adr/
+│   │   ├── 001_celery_over_asyncio_tasks.md
+│   │   ├── 002_hnsw_over_ivfflat.md
+│   │   └── 003_all_minilm_l6_v2_for_embeddings.md
 │   └── requirements.txt
 ├── frontend/
 │   └── src/app/                        # Next.js App Router pages

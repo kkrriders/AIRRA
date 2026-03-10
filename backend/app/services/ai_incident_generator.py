@@ -129,7 +129,11 @@ class AIIncidentGenerator:
                                 "ai_generated": True,
                                 "pattern": pattern,
                                 "generation_timestamp": datetime.now(timezone.utc).isoformat(),
-                            }
+                            },
+                            # AI-generated incidents carry fictional root causes.
+                            # Low trust prevents them from poisoning RAG context
+                            # even if the detection_source filter is ever relaxed.
+                            trust_score=0.2,
                         )
 
                         db.add(incident)

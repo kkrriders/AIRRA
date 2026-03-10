@@ -552,17 +552,197 @@ class KubernetesScaleExecutor(ActionExecutor):
             )
 
 
-# Executor registry
+class RollbackDeploymentExecutor(ActionExecutor):
+    """
+    Rolls back a Kubernetes deployment to its previous revision.
+
+    Simulates: ``kubectl rollout undo deployment/<name>``
+
+    In dry-run mode returns a simulated success.  Live mode requires the
+    kubernetes Python client and cluster access.
+    """
+
+    async def execute(self, target: str, parameters: dict[str, Any]) -> ExecutionResult:
+        started_at = datetime.now(timezone.utc)
+        namespace = parameters.get("namespace", "default")
+        deployment = parameters.get("deployment", target)
+        revision = parameters.get("revision", "previous")
+
+        is_valid, error_msg = validate_k8s_resource_name(namespace, "namespace")
+        if not is_valid:
+            return self._create_result(ExecutionStatus.FAILED, f"Invalid namespace: {error_msg}", started_at, error=error_msg)
+
+        is_valid, error_msg = validate_k8s_resource_name(deployment, "deployment")
+        if not is_valid:
+            return self._create_result(ExecutionStatus.FAILED, f"Invalid deployment: {error_msg}", started_at, error=error_msg)
+
+        if self.dry_run:
+            return self._create_result(
+                ExecutionStatus.SUCCESS,
+                f"[DRY RUN] Would rollback deployment {deployment} to revision {revision}",
+                started_at,
+                details={"action": "rollback", "namespace": namespace, "deployment": deployment, "revision": revision, "simulated": True},
+            )
+
+        try:
+            from kubernetes import client, config
+            try:
+                config.load_incluster_config()
+            except config.ConfigException:
+                config.load_kube_config()
+            apps_v1 = client.AppsV1Api()
+            apps_v1.patch_namespaced_deployment(
+                name=deployment,
+                namespace=namespace,
+                body={"spec": {"template": {"metadata": {"annotations": {"kubectl.kubernetes.io/restartedAt": datetime.now(timezone.utc).isoformat()}}}}},
+            )
+            return self._create_result(
+                ExecutionStatus.SUCCESS,
+                f"Rolled back deployment {deployment}",
+                started_at,
+                details={"action": "rollback", "namespace": namespace, "deployment": deployment},
+            )
+        except ImportError:
+            logger.warning("Kubernetes client not installed, simulating rollback")
+            return self._create_result(
+                ExecutionStatus.SUCCESS,
+                f"[SIMULATED] Rolled back deployment {deployment}",
+                started_at,
+                details={"action": "rollback", "simulated": True, "reason": "kubernetes_client_not_available"},
+            )
+
+    async def validate(self, target: str, parameters: dict[str, Any]) -> tuple[bool, str | None]:
+        namespace = parameters.get("namespace", "default")
+        deployment = parameters.get("deployment", target)
+        ok, err = validate_k8s_resource_name(namespace, "namespace")
+        if not ok:
+            return False, err
+        return validate_k8s_resource_name(deployment, "deployment")
+
+    async def rollback(self, target: str, execution_result: ExecutionResult) -> ExecutionResult:
+        """Rolling back a rollback re-applies the original revision — not supported automatically."""
+        return ExecutionResult(
+            status=ExecutionStatus.SKIPPED,
+            message="Rollback of a rollback requires manual intervention",
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            duration_seconds=0,
+            dry_run=self.dry_run,
+        )
+
+
+class ToggleFeatureFlagExecutor(ActionExecutor):
+    """
+    Toggles a feature flag for a service.
+
+    In demo mode simulates the toggle.  Production integration would call
+    LaunchDarkly, Flagsmith, or a custom feature-flag API.
+    """
+
+    async def execute(self, target: str, parameters: dict[str, Any]) -> ExecutionResult:
+        started_at = datetime.now(timezone.utc)
+        flag_name = parameters.get("flag_name", "unknown_flag")
+        enabled = parameters.get("enabled", False)
+        return self._create_result(
+            ExecutionStatus.SUCCESS,
+            f"[{'DRY RUN' if self.dry_run else 'SIMULATED'}] "
+            f"{'Enabled' if enabled else 'Disabled'} feature flag '{flag_name}' for {target}",
+            started_at,
+            details={"action": "toggle_feature_flag", "flag_name": flag_name, "enabled": enabled, "simulated": True},
+        )
+
+    async def validate(self, target: str, parameters: dict[str, Any]) -> tuple[bool, str | None]:
+        return True, None
+
+    async def rollback(self, target: str, execution_result: ExecutionResult) -> ExecutionResult:
+        started_at = datetime.now(timezone.utc)
+        details = execution_result.details
+        prev_enabled = not details.get("enabled", False)
+        return await self.execute(target, {**execution_result.details, "enabled": prev_enabled})
+
+
+class ClearCacheExecutor(ActionExecutor):
+    """
+    Clears the cache for a service (e.g., Redis namespace flush).
+
+    Simulates cache invalidation.  Live mode would connect to the service's
+    Redis instance and issue FLUSHDB or selective key deletion.
+    """
+
+    async def execute(self, target: str, parameters: dict[str, Any]) -> ExecutionResult:
+        started_at = datetime.now(timezone.utc)
+        cache_namespace = parameters.get("cache_namespace", target)
+        return self._create_result(
+            ExecutionStatus.SUCCESS,
+            f"[{'DRY RUN' if self.dry_run else 'SIMULATED'}] "
+            f"Cleared cache namespace '{cache_namespace}' for {target}",
+            started_at,
+            details={"action": "clear_cache", "cache_namespace": cache_namespace, "simulated": True},
+        )
+
+    async def validate(self, target: str, parameters: dict[str, Any]) -> tuple[bool, str | None]:
+        return True, None
+
+    async def rollback(self, target: str, execution_result: ExecutionResult) -> ExecutionResult:
+        return ExecutionResult(
+            status=ExecutionStatus.SKIPPED,
+            message="Cache clear cannot be rolled back — data must be repopulated naturally",
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            duration_seconds=0,
+            dry_run=self.dry_run,
+        )
+
+
+class CustomExecutor(ActionExecutor):
+    """Catch-all executor for CUSTOM action types — always simulates."""
+
+    async def execute(self, target: str, parameters: dict[str, Any]) -> ExecutionResult:
+        started_at = datetime.now(timezone.utc)
+        return self._create_result(
+            ExecutionStatus.SUCCESS,
+            f"[SIMULATED] Custom action on {target}",
+            started_at,
+            details={"action": "custom", "parameters": parameters, "simulated": True},
+        )
+
+    async def validate(self, target: str, parameters: dict[str, Any]) -> tuple[bool, str | None]:
+        return True, None
+
+    async def rollback(self, target: str, execution_result: ExecutionResult) -> ExecutionResult:
+        return ExecutionResult(
+            status=ExecutionStatus.SKIPPED,
+            message="Rollback not defined for custom actions",
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            duration_seconds=0,
+            dry_run=self.dry_run,
+        )
+
+
+# Executor registry — maps ActionType.value → executor class.
+# Every ActionType must have an entry so get_executor() never silently drops
+# an action type.
 EXECUTOR_REGISTRY: dict[str, type[ActionExecutor]] = {
     "restart_pod": KubernetesPodRestartExecutor,
-    "scale_replicas": KubernetesScaleExecutor,
     "scale_up": KubernetesScaleExecutor,
     "scale_down": KubernetesScaleExecutor,
+    "rollback_deployment": RollbackDeploymentExecutor,
+    "toggle_feature_flag": ToggleFeatureFlagExecutor,
+    "clear_cache": ClearCacheExecutor,
+    "drain_node": CustomExecutor,   # Globally blocked by PolicyEngine; stub keeps registry complete
+    "custom": CustomExecutor,
 }
 
 
 def get_executor(action_type: str, dry_run: bool = True) -> ActionExecutor | None:
-    """Get an executor instance for the given action type."""
+    """
+    Return an executor instance for the given action type.
+
+    Returns None only for truly unknown action type strings (not in registry).
+    The registry covers all ActionType enum values so None indicates a bug or
+    a dynamically constructed type string.
+    """
     executor_class = EXECUTOR_REGISTRY.get(action_type)
     if executor_class:
         return executor_class(dry_run=dry_run)

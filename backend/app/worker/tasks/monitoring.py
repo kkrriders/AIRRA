@@ -16,8 +16,16 @@ from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
 
-# Incidents unaddressed in PENDING_APPROVAL longer than this get escalated.
-ESCALATION_WINDOW_MINUTES: int = 120
+# Severity-tiered escalation windows (minutes).
+# A CRITICAL incident with no SRE response for >15 min is escalated immediately;
+# LOW-severity incidents get the full 2-hour window.
+ESCALATION_WINDOWS: dict[str, int] = {
+    "critical": 15,
+    "high":     30,
+    "medium":   60,
+    "low":      120,
+}
+_DEFAULT_ESCALATION_WINDOW: int = 60  # fallback for unknown/future severities
 
 
 @celery_app.task(name="app.worker.tasks.monitoring.run_anomaly_check")
@@ -53,11 +61,11 @@ def run_ai_generator() -> dict:
 @celery_app.task(name="app.worker.tasks.monitoring.run_escalation_check")
 def run_escalation_check() -> dict:
     """
-    Escalate PENDING_APPROVAL incidents that have had no SRE response.
+    Escalate PENDING_APPROVAL incidents that have exceeded their severity SLA.
 
-    Beat calls this every 10 minutes. Any incident stuck in PENDING_APPROVAL
-    for longer than ESCALATION_WINDOW_MINUTES (120 min) is transitioned to
-    ESCALATED and a Slack alert fires so on-call engineers are re-paged.
+    Beat calls this every 10 minutes. Escalation windows are severity-tiered:
+    critical=15 min, high=30 min, medium=60 min, low=120 min.
+    Each stale incident transitions to ESCALATED and fires a Slack alert.
     """
     try:
         return asyncio.run(_escalation_check())
@@ -93,8 +101,11 @@ async def _ai_generator() -> dict:
 
 async def _escalation_check() -> dict:
     """
-    Find PENDING_APPROVAL incidents with no activity for >ESCALATION_WINDOW_MINUTES
+    Find PENDING_APPROVAL incidents that have exceeded their severity SLA window
     and transition them to ESCALATED, firing a Slack alert for each.
+
+    Each incident is evaluated against its own severity-specific cutoff:
+      critical=15 min, high=30 min, medium=60 min, low=120 min.
 
     Uses updated_at (not detected_at) as the staleness marker: updated_at reflects
     the last time any field changed, which approximates when the incident entered
@@ -106,23 +117,27 @@ async def _escalation_check() -> dict:
     from app.database import get_db_context
     from app.models.incident import Incident, IncidentStatus
 
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=ESCALATION_WINDOW_MINUTES)
+    now = datetime.now(timezone.utc)
     escalated_count = 0
 
     # Snapshot the data needed for Slack BEFORE committing, then release the DB
     # connection before making the HTTP call.  Holding an open transaction across
     # a 10s Slack timeout would exhaust the connection pool under burst load.
-    escalated: list[tuple[str, str, str, str]] = []  # (id, title, service, severity)
+    escalated: list[tuple[str, str, str, str, int]] = []  # (id, title, service, severity, window_minutes)
 
     async with get_db_context() as db:
         stmt = select(Incident).where(
             Incident.status == IncidentStatus.PENDING_APPROVAL,
-            Incident.updated_at <= cutoff,
         )
         result = await db.execute(stmt)
-        stale_incidents = result.scalars().all()
+        pending_incidents = result.scalars().all()
 
-        for incident in stale_incidents:
+        for incident in pending_incidents:
+            window = ESCALATION_WINDOWS.get(incident.severity.value, _DEFAULT_ESCALATION_WINDOW)
+            cutoff = now - timedelta(minutes=window)
+            if incident.updated_at > cutoff:
+                continue  # still within the SLA window for this severity
+
             incident.status = IncidentStatus.ESCALATED
             escalated_count += 1
             escalated.append((
@@ -130,14 +145,15 @@ async def _escalation_check() -> dict:
                 incident.title,
                 incident.affected_service,
                 incident.severity.value,
+                window,
             ))
             logger.warning(
-                f"Escalated incident {incident.id} ({incident.title}) — "
-                f"unaddressed for >{ESCALATION_WINDOW_MINUTES} minutes"
+                f"Escalated incident {incident.id} ({incident.title}) "
+                f"[{incident.severity.value}] — unaddressed for >{window} minutes"
             )
     # DB transaction committed; connection released.  Now send Slack alerts.
-    for incident_id_str, title, service, severity in escalated:
-        await _notify_escalation_slack(incident_id_str, title, service, severity)
+    for incident_id_str, title, service, severity, window in escalated:
+        await _notify_escalation_slack(incident_id_str, title, service, severity, window)
 
     return {"status": "ok", "escalated": escalated_count}
 
@@ -147,6 +163,7 @@ async def _notify_escalation_slack(
     title: str,
     service: str,
     severity: str,
+    window_minutes: int,
 ) -> None:
     """
     Post an escalation alert to the Slack Incoming Webhook (best-effort).
@@ -185,7 +202,7 @@ async def _notify_escalation_slack(
                         f"*{title}*\n"
                         f"*Service:* `{service}`\n"
                         f"*Severity:* {severity.upper()}\n"
-                        f"*Pending >{ESCALATION_WINDOW_MINUTES}min with no SRE response*\n"
+                        f"*Pending >{window_minutes}min with no SRE response*\n"
                         f"*ID:* `{incident_id}`"
                     ),
                 },

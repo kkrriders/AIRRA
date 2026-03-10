@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Optional
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -117,6 +117,20 @@ class Incident(Base, TimestampMixin):
         Vector(384),
         nullable=True,
         comment="384-dim all-MiniLM-L6-v2 embedding for semantic similarity search",
+    )
+
+    # RAG retrieval trust score — weights composite similarity during analysis.
+    # Higher-trust incidents have more influence on hypothesis generation.
+    # Values:
+    #   1.0 = human-validated (postmortem with confirmed actual_root_cause)
+    #   0.7 = human-approved (action was approved by a human operator)
+    #   0.4 = auto-detected (airra_monitor / quick_incident_ui) — default
+    #   0.2 = ai_generator (fictional scenarios, excluded from RAG but scored)
+    trust_score: Mapped[float] = mapped_column(
+        Numeric(precision=3, scale=2),
+        nullable=False,
+        default=0.4,
+        comment="RAG trust: 1.0=human-validated, 0.7=approved, 0.4=auto, 0.2=ai_generated",
     )
 
     # Flexible metadata storage

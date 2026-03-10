@@ -14,8 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.action import Action, ActionStatus
+from app.models.audit_log import AuditEventType
 from app.models.incident import Incident, IncidentStatus
 from app.schemas.action import ActionApprove, ActionReject, ActionResponse
+from app.services.audit_service import write_audit_log
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,21 @@ async def approve_action(
             )
         incident.status = IncidentStatus.APPROVED
 
+    await write_audit_log(
+        db,
+        AuditEventType.ACTION_APPROVED,
+        actor=approval_data.approved_by,
+        outcome="success",
+        incident_id=action.incident_id,
+        action_id=action.id,
+        details={
+            "action_type": action.action_type.value,
+            "target_service": action.target_service,
+            "risk_level": action.risk_level.value,
+            "execution_mode": approval_data.execution_mode,
+        },
+    )
+
     await db.commit()
     await db.refresh(action)
 
@@ -156,6 +173,21 @@ async def reject_action(
 
     if incident and incident.status == IncidentStatus.PENDING_APPROVAL:
         incident.status = IncidentStatus.ESCALATED
+
+    await write_audit_log(
+        db,
+        AuditEventType.ACTION_REJECTED,
+        actor=rejection_data.rejected_by,
+        outcome="blocked",
+        incident_id=action.incident_id,
+        action_id=action.id,
+        details={
+            "action_type": action.action_type.value,
+            "target_service": action.target_service,
+            "risk_level": action.risk_level.value,
+            "rejection_reason": rejection_data.rejection_reason,
+        },
+    )
 
     await db.commit()
     await db.refresh(action)

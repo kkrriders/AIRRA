@@ -90,6 +90,7 @@ async def init_db() -> None:
     """
     from app.models import Base
     from app.models.action import Action  # noqa: F401
+    from app.models.audit_log import AgentAuditLog  # noqa: F401
     from app.models.engineer import Engineer  # noqa: F401
     from app.models.engineer_review import EngineerReview  # noqa: F401
     from app.models.hypothesis import Hypothesis  # noqa: F401

@@ -7,11 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.execution.base import ExecutionStatus
+from app.core.execution.kubernetes import get_executor
 from app.database import get_db
 from app.models.action import Action, ActionStatus
+from app.models.audit_log import AuditEventType
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
 from app.schemas.action import ActionResponse
+from app.services.audit_service import write_audit_log
 from app.services.learning_engine import IncidentOutcome, LearningEngine
 
 logger = logging.getLogger(__name__)
@@ -111,14 +115,42 @@ async def execute_action(
 
     # Update action status
     action.status = ActionStatus.EXECUTING
+    await write_audit_log(
+        db,
+        AuditEventType.ACTION_EXECUTE_STARTED,
+        actor="operator",
+        outcome="success",
+        incident_id=action.incident_id,
+        action_id=action.id,
+        details={
+            "action_type": action.action_type.value,
+            "target_service": action.target_service,
+            "execution_mode": action.execution_mode,
+            "risk_level": action.risk_level.value,
+        },
+    )
     await db.commit()
 
     try:
-        # Simulate execution
         execution_start = datetime.now(timezone.utc)
 
-        # In dry-run mode, we just log what would happen
-        if action.execution_mode == "dry_run":
+        # Dispatch to the typed executor for this action type.
+        # The executor handles both dry_run and live modes internally,
+        # including K8s client loading, resource name validation, and rollback.
+        is_dry_run = action.execution_mode == "dry_run"
+        executor = get_executor(action.action_type.value, dry_run=is_dry_run)
+
+        if executor:
+            exec_result = await executor.execute(action.target_service, action.parameters)
+            success = exec_result.status == ExecutionStatus.SUCCESS
+            execution_result = {
+                "status": exec_result.status.value,
+                "message": exec_result.message,
+                "details": exec_result.details,
+                "dry_run": exec_result.dry_run,
+            }
+        elif is_dry_run:
+            # Unregistered action type — inline fallback for dry_run only
             execution_result = {
                 "mode": "dry_run",
                 "message": f"Would execute {action.action_type.value} on {action.target_service}",
@@ -127,9 +159,9 @@ async def execute_action(
             }
             success = True
         else:
-            # In live mode, execute via appropriate executor
-            # This is where you'd integrate with Kubernetes, AWS, etc.
-            raise NotImplementedError("Live execution not implemented in MVP")
+            raise NotImplementedError(
+                f"Live execution not implemented for action type: {action.action_type.value}"
+            )
 
         execution_end = datetime.now(timezone.utc)
         duration_seconds = int((execution_end - execution_start).total_seconds())
@@ -168,6 +200,21 @@ async def execute_action(
                 (incident.resolved_at - detected_at).total_seconds()
             )
             incident.resolution_summary = f"Resolved via action: {action.name}"
+
+        await write_audit_log(
+            db,
+            AuditEventType.ACTION_EXECUTE_SUCCEEDED,
+            actor="operator",
+            outcome="success",
+            incident_id=action.incident_id,
+            action_id=action.id,
+            details={
+                "action_type": action.action_type.value,
+                "target_service": action.target_service,
+                "execution_mode": action.execution_mode,
+                "duration_seconds": duration_seconds,
+            },
+        )
 
         await db.commit()
         await db.refresh(action)
@@ -216,6 +263,19 @@ async def execute_action(
                     f"Learning engine update failed for action {action_id}: {learn_err}"
                 )
 
+        # Queue post-action verification as a background Celery task so the
+        # HTTP response returns immediately.  The task waits for the
+        # stabilization window, compares before/after Prometheus metrics, and
+        # auto-escalates (or rolls back for live mode) if the action degraded
+        # the service.
+        if success:
+            try:
+                from app.worker.tasks.verification import verify_action_task  # deferred to avoid circular import
+                verify_action_task.delay(str(action_id), str(action.incident_id))
+                logger.info(f"Verification task queued for action {action_id}")
+            except Exception as v_err:
+                logger.warning(f"Failed to queue verification task for action {action_id}: {v_err}")
+
         return action
 
     except HTTPException:
@@ -226,5 +286,18 @@ async def execute_action(
         # NEW-7 fix: store error type rather than raw exception string so
         # internal details aren't leaked through the ActionResponse JSON.
         action.execution_result = {"error": "execution_failed", "error_type": type(e).__name__}
+        await write_audit_log(
+            db,
+            AuditEventType.ACTION_EXECUTE_FAILED,
+            actor="operator",
+            outcome="failure",
+            incident_id=action.incident_id,
+            action_id=action.id,
+            details={
+                "action_type": action.action_type.value,
+                "target_service": action.target_service,
+                "error_type": type(e).__name__,
+            },
+        )
         await db.commit()
         raise HTTPException(status_code=500, detail="Action execution failed")

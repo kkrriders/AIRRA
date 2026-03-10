@@ -19,9 +19,11 @@ from app.core.perception.anomaly_detector import AnomalyDetector, categorize_ano
 from app.core.reasoning.hypothesis_generator import HypothesisGenerator, rank_hypotheses
 from app.database import get_db_context
 from app.models.action import Action, ActionStatus
+from app.models.audit_log import AuditEventType
 from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
 from app.models.postmortem import Postmortem
+from app.services.audit_service import write_audit_log
 from app.services.dependency_graph import get_dependency_graph
 from app.services.embedding_service import get_embedding_service
 from app.services.llm_client import get_llm_client
@@ -236,12 +238,17 @@ async def _run_analysis(incident_id: str) -> dict:
                     scored_rows = sorted(
                         [
                             (
+                                # Composite confidence weighted by the past incident's
+                                # trust_score. Human-validated incidents (1.0) get full
+                                # weight; auto-detected ones (0.4) are downweighted so
+                                # a fictional or low-quality past incident can't dominate
+                                # RAG context. See: incident.trust_score column + 008 migration.
                                 _compute_match_confidence(
                                     current_service=incident.affected_service,
                                     current_metric_names=current_metric_names,
                                     past_incident=row.Incident,
                                     vector_distance=row.distance or 1.0,
-                                ),
+                                ) * float(row.Incident.trust_score),
                                 row,
                             )
                             for row in similar_rows
@@ -384,6 +391,23 @@ async def _run_analysis(incident_id: str) -> dict:
                     service_name=incident.affected_service,
                     service_context=service_context.copy(),  # NEW-1: independent copy per callsite
                 )
+
+                # PolicyEngine veto — write audit entry so operators can see
+                # why no action was proposed (not a silent drop).
+                if action_recommendation is None and action_selector.last_policy_veto:
+                    await write_audit_log(
+                        db,
+                        AuditEventType.POLICY_BLOCKED,
+                        actor="system",
+                        outcome="blocked",
+                        incident_id=incident.id,
+                        action_id=None,
+                        details={
+                            "veto_reason": action_selector.last_policy_veto,
+                            "hypothesis_category": top_hypothesis.category,
+                            "target_service": incident.affected_service,
+                        },
+                    )
 
             if action_recommendation:
                 action = Action(

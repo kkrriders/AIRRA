@@ -71,6 +71,10 @@ class EmbeddingService:
         """
         Embed an incident using IncidentSummarizer's structured text.
 
+        Secret redaction is applied between summarize() and encode() so that
+        credentials that appear in logs / metrics snapshots are never stored
+        permanently in the vector DB (OWASP LLM06: Sensitive Information Disclosure).
+
         Args:
             incident: The Incident ORM object.
             extra_context: Optional enrichment (root_cause, resolution) for resolved incidents.
@@ -79,9 +83,21 @@ class EmbeddingService:
             384-dimensional float list.
         """
         from app.services.incident_summarizer import get_summarizer
+        from app.services.secret_redactor import redact_secrets
 
         summarizer = get_summarizer()
         text = summarizer.summarize(incident, extra_context=extra_context)
+
+        # Redact secrets before encoding — embeddings are permanent and cannot
+        # be selectively purged from pgvector without full re-indexing.
+        text, secret_count = redact_secrets(text)
+        if secret_count:
+            logger.warning(
+                "embed_incident redacted %d secret(s) from incident %s before encoding",
+                secret_count,
+                incident.id,
+            )
+
         logger.debug(f"Embedding incident {incident.id} — text length: {len(text)} chars")
         return self.embed_text(text)
 

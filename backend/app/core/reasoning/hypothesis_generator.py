@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from app.core.perception.anomaly_detector import AnomalyDetection
 from app.services.learning_engine import get_learning_engine
 from app.services.llm_client import LLMClient, LLMResponse
+from app.services.prompt_guard import scan_for_injection
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,13 @@ def sanitize_context_value(value: Any) -> str:
         value_str = value_str[:MAX_CONTEXT_VALUE_LENGTH] + "... [truncated]"
 
     # Strip whitespace
-    return value_str.strip()
+    value_str = value_str.strip()
+
+    # Semantic injection guard: detect "ignore previous instructions" class of
+    # attacks that survive token stripping (they contain no special characters).
+    value_str, _ = scan_for_injection(value_str)
+
+    return value_str
 
 
 class Evidence(BaseModel):

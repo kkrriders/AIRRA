@@ -170,6 +170,16 @@ class Settings(BaseSettings):
         ge=30,
         description="Action execution timeout in seconds"
     )
+    verification_stabilization_seconds: int = Field(
+        default=30,
+        ge=5,
+        description=(
+            "Seconds to wait after action execution before sampling Prometheus metrics "
+            "for post-action verification. Production should be 120+; 30s is suitable "
+            "for demo environments where scrape intervals are short. "
+            "Set AIRRA_VERIFICATION_STABILIZATION_SECONDS to override."
+        ),
+    )
 
     # Rate Limiting
     rate_limit_trust_x_forwarded_for: bool = Field(

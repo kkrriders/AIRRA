@@ -15,18 +15,43 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import StaticPool
 
 from app.config import settings
 
-# Create async engine
-engine: AsyncEngine = create_async_engine(
-    str(settings.database_url),
-    echo=settings.database_echo,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_max_overflow,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_recycle=3600,  # Recycle connections after 1 hour
-)
+# Create async engine — SQLite (tests) and PostgreSQL (production) need different kwargs
+_db_url = str(settings.database_url)
+_is_sqlite = _db_url.startswith("sqlite")
+
+if _is_sqlite:
+    # pgvector's Vector type is PostgreSQL-only. For SQLite (tests), compile it
+    # as TEXT so metadata.create_all() succeeds. Embeddings are always NULL in
+    # tests so no type-conversion is needed at runtime.
+    try:
+        from pgvector.sqlalchemy import Vector
+        from sqlalchemy.ext.compiler import compiles
+
+        @compiles(Vector, "sqlite")  # type: ignore[misc]
+        def _vector_as_text_sqlite(element, compiler, **kw):  # type: ignore[misc]
+            return "TEXT"
+    except ImportError:
+        pass
+
+    engine: AsyncEngine = create_async_engine(
+        _db_url,
+        echo=settings.database_echo,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    engine = create_async_engine(
+        _db_url,
+        echo=settings.database_echo,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
 
 # Create session factory
 async_session_maker = async_sessionmaker(

@@ -6,7 +6,6 @@ Serves as the PostgreSQL source-of-truth for the LearningEngine's in-memory cach
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Float, Index, Integer, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base, TimestampMixin
@@ -23,11 +22,7 @@ class IncidentPattern(Base, TimestampMixin):
     __tablename__ = "incident_patterns"
 
     # Native PostgreSQL UUID — consistent with Incident, Hypothesis, Action models (S3 fix)
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4,
-    )
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     # UniqueConstraint in __table_args__ creates the unique index — no need for
     # unique=True here, which would create a second redundant unique index (S4 fix)
     pattern_id: Mapped[str] = mapped_column(

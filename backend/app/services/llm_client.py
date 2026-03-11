@@ -292,12 +292,12 @@ class AnthropicClient(LLMClient):
             # NEW-18 fix: use explicit None check — `temperature or self.temperature`
             # treats 0.0 (fully deterministic) as falsy and falls back to default.
             effective_temp = temperature if temperature is not None else self.temperature
-            response = await self.client.messages.create(  # type: ignore[arg-type]
+            response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=effective_temp,
                 system=system_prompt or "",
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
             )
 
             content = next((block.text for block in response.content if hasattr(block, "text")), "")

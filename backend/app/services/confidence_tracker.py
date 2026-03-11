@@ -13,6 +13,7 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ class ConfidenceTracker:
 
         # Group records by confidence bins
         bin_size = 1.0 / confidence_bins
-        bins = [[] for _ in range(confidence_bins)]
+        bins: list[list[Any]] = [[] for _ in range(confidence_bins)]
 
         for record in records:
             bin_idx = min(
@@ -151,7 +152,7 @@ class ConfidenceTracker:
             bins[bin_idx].append(record)
 
         # Calculate statistics per bin
-        calibration_data = []
+        calibration_data: list[dict[str, Any]] = []
         total_correct = 0
 
         for bin_idx, bin_records in enumerate(bins):

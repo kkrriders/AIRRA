@@ -237,7 +237,7 @@ class OperatorFeedbackCollector:
         ]
 
         # Count by type
-        feedback_by_type = {}
+        feedback_by_type: dict[str, int] = {}
         for feedback in recent_feedback:
             type_str = feedback.feedback_type.value
             feedback_by_type[type_str] = feedback_by_type.get(type_str, 0) + 1
@@ -283,7 +283,7 @@ class OperatorFeedbackCollector:
             if f.feedback_type == FeedbackType.HYPOTHESIS_INCORRECT
         ]
 
-        mistake_counts = {}
+        mistake_counts: dict[tuple[str, str], int] = {}
         for feedback in incorrect_hypotheses:
             if feedback.airra_hypothesis_category:
                 key = (

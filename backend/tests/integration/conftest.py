@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,7 +81,7 @@ async def api_client(
          patch("app.api.v1.quick_incident.get_prometheus_client", return_value=mock_prometheus_client):
 
         async with AsyncClient(
-            app=app,
+            transport=ASGITransport(app=app),
             base_url="http://test",
             headers={"X-API-Key": "dev-test-key-12345"}
         ) as client:

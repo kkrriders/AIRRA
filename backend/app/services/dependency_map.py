@@ -232,7 +232,7 @@ class StaticDependencyAdapter(CMDBAdapter):
 
     async def get_blast_radius(self, service_id: str) -> BlastRadius:
         """Calculate blast radius if this service fails."""
-        affected = set()
+        affected: set[str] = set()
         self._calculate_downstream_impact(service_id, affected)
 
         # Determine severity based on affected count and tiers

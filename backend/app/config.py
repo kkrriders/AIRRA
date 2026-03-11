@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, field_validator
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,12 +38,12 @@ class Settings(BaseSettings):
         default=["http://localhost:3000"],
         description="Allowed CORS origins"
     )
-    api_key: SecretStr = Field(
+    api_key: SecretStr = Field(  # type: ignore[assignment]
         default="",
         description="API key for authenticating requests. "
         "Leave empty to disable auth (development only)."
     )
-    notification_token_secret: SecretStr = Field(
+    notification_token_secret: SecretStr = Field(  # type: ignore[assignment]
         default="",
         description=(
             "Dedicated HMAC secret for signing notification acknowledgement tokens "
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: PostgresDsn = Field(
+    database_url: PostgresDsn = Field(  # type: ignore[assignment]
         default="postgresql+asyncpg://airra:airra@localhost:5432/airra",
         description="PostgreSQL connection string"
     )
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     database_echo: bool = Field(default=False, description="Log SQL queries")
 
     # Redis
-    redis_url: RedisDsn = Field(
+    redis_url: RedisDsn = Field(  # type: ignore[assignment]
         default="redis://localhost:6379/0",
         description="Redis connection string"
     )
@@ -71,10 +71,10 @@ class Settings(BaseSettings):
 
     # LLM Configuration
     llm_provider: Literal["anthropic", "openai", "openrouter", "groq"] = "anthropic"
-    anthropic_api_key: SecretStr = Field(default="", description="Anthropic API key")
-    openai_api_key: SecretStr = Field(default="", description="OpenAI API key")
-    openrouter_api_key: SecretStr = Field(default="", description="OpenRouter API key")
-    groq_api_key: SecretStr = Field(
+    anthropic_api_key: SecretStr = Field(default="", description="Anthropic API key")  # type: ignore[assignment]
+    openai_api_key: SecretStr = Field(default="", description="OpenAI API key")  # type: ignore[assignment]
+    openrouter_api_key: SecretStr = Field(default="", description="OpenRouter API key")  # type: ignore[assignment]
+    groq_api_key: SecretStr = Field(  # type: ignore[assignment]
         default="",
         description=(
             "Groq API key (set AIRRA_GROQ_API_KEY). Used when llm_provider='groq'. "
@@ -215,7 +215,7 @@ class Settings(BaseSettings):
         default="",
         description="SMTP authentication username (email address)"
     )
-    smtp_password: SecretStr = Field(
+    smtp_password: SecretStr = Field(  # type: ignore[assignment]
         default="",
         description="SMTP authentication password (app-specific password for Gmail)"
     )
@@ -243,7 +243,7 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins")
     @classmethod
-    def validate_cors_origins(cls, v: list[str], info: object) -> list[str]:  # type: ignore[explicit-override]
+    def validate_cors_origins(cls, v: list[str], info: ValidationInfo) -> list[str]:
         """
         Validate CORS origins are properly formatted URLs.
 
@@ -291,7 +291,7 @@ class Settings(BaseSettings):
 
     @field_validator("anthropic_api_key", "openai_api_key", "groq_api_key")
     @classmethod
-    def validate_api_keys(cls, v: SecretStr, info: object) -> SecretStr:  # type: ignore[explicit-override]
+    def validate_api_keys(cls, v: SecretStr, info: ValidationInfo) -> SecretStr:
         """Validate that required API keys are set in non-development environments."""
         if info.data.get("environment") != "production":
             return v

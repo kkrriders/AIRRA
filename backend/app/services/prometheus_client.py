@@ -116,7 +116,7 @@ class PrometheusClient:
         }
 
         try:
-            response = await self.client.get(url, params=params)
+            response = await self.client.get(url, params=params)  # type: ignore[arg-type]
             response.raise_for_status()
 
             data = response.json()
@@ -134,7 +134,7 @@ class PrometheusClient:
 
     def _parse_response(self, data: dict) -> list[MetricResult]:
         """Parse Prometheus API response into MetricResult objects."""
-        results = []
+        results: list[MetricResult] = []
 
         result_type = data.get("resultType")
         if result_type not in ("vector", "matrix"):

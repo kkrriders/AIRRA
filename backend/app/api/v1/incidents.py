@@ -179,7 +179,7 @@ async def list_incidents(
     incidents = result.scalars().all()
 
     return IncidentListResponse(
-        items=list(incidents),
+        items=list(incidents),  # type: ignore[arg-type]
         total=total,
         page=page,
         page_size=page_size,

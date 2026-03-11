@@ -107,7 +107,7 @@ async def list_engineers(
     engineers = result.scalars().all()
 
     return EngineerListResponse(
-        items=list(engineers),
+        items=list(engineers),  # type: ignore[arg-type]
         total=total,
         page=page,
         page_size=page_size,

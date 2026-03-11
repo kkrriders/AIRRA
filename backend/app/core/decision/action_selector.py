@@ -10,6 +10,7 @@ Senior Engineering Note:
 """
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from app.core.reasoning.hypothesis_generator import HypothesisItem
 from app.models.action import ActionType, RiskLevel
@@ -384,7 +385,7 @@ class ActionSelector:
         service_context: dict | None = None,
     ) -> dict:
         """Build action-specific parameters."""
-        params = {
+        params: dict[str, Any] = {
             "service_name": service_name,
         }
 

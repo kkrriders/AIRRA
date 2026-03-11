@@ -132,7 +132,7 @@ class LogClient:
             }
 
             response = await self.client.get(
-                f"{self.base_url}/loki/api/v1/query_range", params=params
+                f"{self.base_url}/loki/api/v1/query_range", params=params  # type: ignore[arg-type]
             )
 
             if response.status_code != 200:

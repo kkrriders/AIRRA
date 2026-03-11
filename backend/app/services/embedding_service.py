@@ -43,7 +43,7 @@ class EmbeddingService:
             with _MODEL_LOCK:
                 if self._model is None:
                     try:
-                        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]  # noqa: I001
+                        from sentence_transformers import SentenceTransformer  # noqa: I001
                         logger.info(f"Loading embedding model {self.MODEL_NAME} ...")
                         self._model = SentenceTransformer(self.MODEL_NAME)
                         logger.info(f"Embedding model loaded ({self.DIMS} dims)")

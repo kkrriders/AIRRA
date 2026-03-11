@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class EmbeddingService:
     DIMS = 384
 
     def __init__(self) -> None:
-        self._model: Optional[Any] = None  # lazy-loaded on first call
+        self._model: Any | None = None  # lazy-loaded on first call
 
     def _get_model(self) -> Any:
         """Lazy-load the sentence-transformers model (thread-safe singleton)."""
@@ -43,7 +43,7 @@ class EmbeddingService:
             with _MODEL_LOCK:
                 if self._model is None:
                     try:
-                        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
+                        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]  # noqa: I001
                         logger.info(f"Loading embedding model {self.MODEL_NAME} ...")
                         self._model = SentenceTransformer(self.MODEL_NAME)
                         logger.info(f"Embedding model loaded ({self.DIMS} dims)")

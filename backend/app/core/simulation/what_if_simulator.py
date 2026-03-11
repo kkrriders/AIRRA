@@ -12,7 +12,11 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from app.core.decision.blast_radius import BlastRadiusAssessment, BlastRadiusCalculator, BlastRadiusLevel
+from app.core.decision.blast_radius import (
+    BlastRadiusAssessment,
+    BlastRadiusCalculator,
+    BlastRadiusLevel,
+)
 from app.core.decision.risk_weighted_actions import (
     ActionRiskProfile,
     ActionRiskRegistry,

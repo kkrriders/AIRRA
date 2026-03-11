@@ -11,8 +11,8 @@ Senior Engineering Note:
 """
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
 from contextlib import asynccontextmanager
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI

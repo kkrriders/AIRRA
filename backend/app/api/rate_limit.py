@@ -174,7 +174,7 @@ class RateLimiter:
         now = time.time()
         window_start = now - self.window_seconds
 
-        result = await redis_client.eval(
+        result = await redis_client.eval(  # type: ignore[misc]
             _SLIDING_WINDOW_LUA,
             1,                          # number of KEYS
             key,                        # KEYS[1]

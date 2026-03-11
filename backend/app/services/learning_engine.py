@@ -154,9 +154,9 @@ class LearningEngine:
 
                 # Get hypothesis if provided
                 if outcome.hypothesis_id:
-                    stmt = select(Hypothesis).where(Hypothesis.id == outcome.hypothesis_id)
-                    result = await db.execute(stmt)
-                    hypothesis = result.scalar_one_or_none()
+                    hyp_stmt = select(Hypothesis).where(Hypothesis.id == outcome.hypothesis_id)
+                    hyp_result = await db.execute(hyp_stmt)
+                    hypothesis = hyp_result.scalar_one_or_none()
 
                     if hypothesis:
                         # Update hypothesis validation
@@ -174,9 +174,9 @@ class LearningEngine:
 
                 # Get action if provided
                 if outcome.action_id:
-                    stmt = select(Action).where(Action.id == outcome.action_id)
-                    result = await db.execute(stmt)
-                    action = result.scalar_one_or_none()
+                    act_stmt = select(Action).where(Action.id == outcome.action_id)
+                    act_result = await db.execute(act_stmt)
+                    action = act_result.scalar_one_or_none()
 
                     if action:
                         # Record action effectiveness — full reassignment so SQLAlchemy

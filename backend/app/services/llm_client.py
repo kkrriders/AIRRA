@@ -180,6 +180,9 @@ llm_cache = LLMCache()
 class LLMClient(ABC):
     """Abstract base class for LLM clients."""
 
+    model: str
+    temperature: float
+
     @abstractmethod
     async def _generate_raw(
         self,
@@ -284,12 +287,12 @@ class AnthropicClient(LLMClient):
     ) -> LLMResponse:
         """Generate text completion with Claude."""
         try:
-            messages = [{"role": "user", "content": prompt}]
+            messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
 
             # NEW-18 fix: use explicit None check — `temperature or self.temperature`
             # treats 0.0 (fully deterministic) as falsy and falls back to default.
             effective_temp = temperature if temperature is not None else self.temperature
-            response = await self.client.messages.create(
+            response = await self.client.messages.create(  # type: ignore[arg-type]
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=effective_temp,
@@ -297,7 +300,7 @@ class AnthropicClient(LLMClient):
                 messages=messages,
             )
 
-            content = response.content[0].text
+            content = next((block.text for block in response.content if hasattr(block, "text")), "")
 
             return LLMResponse(
                 content=content,
@@ -390,7 +393,7 @@ class OpenAIClient(LLMClient):
     ) -> LLMResponse:
         """Generate text completion with GPT."""
         try:
-            messages = []
+            messages: list[dict[str, str]] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
@@ -399,7 +402,7 @@ class OpenAIClient(LLMClient):
             effective_temp = temperature if temperature is not None else self.temperature
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 temperature=effective_temp,
                 max_tokens=max_tokens or self.max_tokens,
             )

@@ -135,7 +135,7 @@ async def list_on_call_schedules(
     schedules = result.scalars().all()
 
     return OnCallListResponse(
-        items=schedules,
+        items=list(schedules),
         total=total,
         page=page,
         page_size=page_size,

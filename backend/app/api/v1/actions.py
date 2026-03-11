@@ -174,9 +174,9 @@ async def execute_action(
 
         # NEW-12 fix: re-fetch incident to detect concurrent lifecycle changes
         # (e.g. escalation by lifecycle manager between EXECUTING commit and now).
-        stmt = select(Incident).where(Incident.id == action.incident_id)
-        result = await db.execute(stmt)
-        incident = result.scalar_one_or_none()
+        refetch_stmt = select(Incident).where(Incident.id == action.incident_id)
+        refetch_result = await db.execute(refetch_stmt)
+        incident = refetch_result.scalar_one_or_none()
 
         if incident and success:
             if incident.status != IncidentStatus.EXECUTING:

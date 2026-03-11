@@ -51,9 +51,9 @@ async def capture_outcome(
 
         outcome = IncidentOutcome(
             incident_id=incident_id,
-            hypothesis_id=outcome_request.hypothesis_id,
+            hypothesis_id=UUID(outcome_request.hypothesis_id) if outcome_request.hypothesis_id else None,
             hypothesis_correct=outcome_request.hypothesis_correct,
-            action_id=outcome_request.action_id,
+            action_id=UUID(outcome_request.action_id) if outcome_request.action_id else None,
             action_effective=outcome_request.action_effective,
             human_override=outcome_request.human_override,
             override_reason=outcome_request.override_reason,

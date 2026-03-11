@@ -243,7 +243,7 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins")
     @classmethod
-    def validate_cors_origins(cls, v: list[str], info) -> list[str]:
+    def validate_cors_origins(cls, v: list[str], info: object) -> list[str]:  # type: ignore[explicit-override]
         """
         Validate CORS origins are properly formatted URLs.
 
@@ -291,7 +291,7 @@ class Settings(BaseSettings):
 
     @field_validator("anthropic_api_key", "openai_api_key", "groq_api_key")
     @classmethod
-    def validate_api_keys(cls, v: SecretStr, info) -> SecretStr:
+    def validate_api_keys(cls, v: SecretStr, info: object) -> SecretStr:  # type: ignore[explicit-override]
         """Validate that required API keys are set in non-development environments."""
         if info.data.get("environment") != "production":
             return v

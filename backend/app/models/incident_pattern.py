@@ -3,7 +3,7 @@ IncidentPattern model for persisting learned patterns across restarts.
 
 Serves as the PostgreSQL source-of-truth for the LearningEngine's in-memory cache.
 """
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Float, Index, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -23,7 +23,7 @@ class IncidentPattern(Base, TimestampMixin):
     __tablename__ = "incident_patterns"
 
     # Native PostgreSQL UUID — consistent with Incident, Hypothesis, Action models (S3 fix)
-    id: Mapped[uuid4] = mapped_column(
+    id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,

@@ -206,7 +206,7 @@ async def list_notifications(
     notifications = result.scalars().all()
 
     return NotificationListResponse(
-        items=notifications,
+        items=list(notifications),
         total=total,
         page=page,
         page_size=page_size,
@@ -265,7 +265,7 @@ async def get_notification_stats(
     if end_date:
         filters.append(Notification.created_at <= end_date)
 
-    where_clause = and_(*filters) if filters else True
+    where_clause = and_(*filters) if filters else and_(True)  # type: ignore[arg-type]
 
     stmt = select(
         func.count(Notification.id).label("total"),

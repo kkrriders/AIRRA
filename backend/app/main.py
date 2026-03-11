@@ -11,6 +11,7 @@ Senior Engineering Note:
 """
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
@@ -31,7 +32,7 @@ from app.database import close_db, get_db_context, init_db
 # Configure structured logging
 logger = logging.getLogger()
 log_handler = logging.StreamHandler()
-formatter = jsonlogger.JsonFormatter(
+formatter = jsonlogger.JsonFormatter(  # type: ignore[attr-defined]
     fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -239,9 +240,9 @@ async def _manage_demo_incidents() -> None:
                 Incident.detected_at < cutoff_time
             )
             delete_result = await db.execute(delete_query)
-            if delete_result.rowcount:
+            if delete_result.rowcount:  # type: ignore[attr-defined]
                 await db.commit()
-                logger.info(f"Cleaned up {delete_result.rowcount} old simulation incidents (>24h)")
+                logger.info(f"Cleaned up {delete_result.rowcount} old simulation incidents (>24h)")  # type: ignore[attr-defined]
 
             # Step 2: Progress existing recent simulation incidents through lifecycle
             recent_sims_query = select(Incident).where(
@@ -338,7 +339,7 @@ async def _manage_demo_incidents() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator:
+async def lifespan(app: FastAPI) -> AsyncGenerator[Any, None]:
     """
     Application lifespan handler for startup and shutdown.
 

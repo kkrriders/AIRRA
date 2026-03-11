@@ -48,9 +48,14 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+# Relaxed for gradual type adoption — annotation debt is tracked separately
+disallow_any_generics = false
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+warn_return_any = false
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

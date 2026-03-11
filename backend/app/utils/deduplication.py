@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.incident import Incident, IncidentStatus
+from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 
 logger = logging.getLogger(__name__)
 
@@ -389,7 +389,7 @@ async def create_or_update_incident(
         severity_order = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
         if severity_order.get(severity, 0) > severity_order.get(duplicate.severity.value, 0):
             logger.info(f"Escalating severity from {duplicate.severity} to {severity}")
-            duplicate.severity = severity
+            duplicate.severity = IncidentSeverity(severity)
 
         # Flush changes to database (get ID if needed) but don't commit yet
         await db.flush()

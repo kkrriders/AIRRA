@@ -234,7 +234,7 @@ async def list_incidents_under_review(
     reviews = result.scalars().all()
 
     return EngineerReviewListResponse(
-        items=reviews,
+        items=list(reviews),
         total=total,
         page=page,
         page_size=page_size,
@@ -384,7 +384,7 @@ async def get_engineer_review_history(
     reviews = result.scalars().all()
 
     return EngineerReviewListResponse(
-        items=reviews,
+        items=list(reviews),
         total=total,
         page=page,
         page_size=page_size,

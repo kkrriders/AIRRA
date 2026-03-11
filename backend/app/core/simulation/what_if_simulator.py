@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from app.core.decision.blast_radius import BlastRadiusAssessment, BlastRadiusCalculator
+from app.core.decision.blast_radius import BlastRadiusAssessment, BlastRadiusCalculator, BlastRadiusLevel
 from app.core.decision.risk_weighted_actions import (
     ActionRiskProfile,
     ActionRiskRegistry,
@@ -30,7 +30,7 @@ class SimulatedOutcome:
 
     action_type: ActionType
     action_description: str
-    risk_profile: ActionRiskProfile
+    risk_profile: ActionRiskProfile | None
 
     # Predicted metrics
     predicted_success_probability: float  # Based on historical success rate
@@ -52,6 +52,7 @@ class SimulatedOutcome:
     # Recommendation
     recommended: bool
     recommendation_reasoning: str
+
 
 
 @dataclass
@@ -181,7 +182,7 @@ class WhatIfSimulator:
             service_name=service_name,
             incident_category=incident_category,
             blast_radius=blast_radius or BlastRadiusAssessment(
-                level="unknown",
+                level=BlastRadiusLevel.MINIMAL,
                 score=0.0,
                 affected_services_count=0,
                 downstream_services=[],
@@ -508,7 +509,7 @@ class WhatIfSimulator:
                 f"   Expected Cost: ${outcome.expected_cost_dollars:.2f} "
                 f"(worst: ${outcome.worst_case_cost_dollars:.2f})"
             )
-            lines.append(f"   Risk Score: {outcome.risk_profile.risk_score:.2f}")
+            lines.append(f"   Risk Score: {outcome.risk_profile.risk_score:.2f}" if outcome.risk_profile else "   Risk Score: N/A")
             lines.append(f"   Blast Radius: {outcome.blast_radius_impact}")
 
             if outcome.potential_side_effects:

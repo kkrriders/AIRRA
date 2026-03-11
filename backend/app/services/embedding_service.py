@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -35,15 +35,15 @@ class EmbeddingService:
     DIMS = 384
 
     def __init__(self) -> None:
-        self._model = None  # lazy-loaded on first call
+        self._model: Optional[Any] = None  # lazy-loaded on first call
 
-    def _get_model(self):
+    def _get_model(self) -> Any:
         """Lazy-load the sentence-transformers model (thread-safe singleton)."""
         if self._model is None:
             with _MODEL_LOCK:
                 if self._model is None:
                     try:
-                        from sentence_transformers import SentenceTransformer  # type: ignore
+                        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
                         logger.info(f"Loading embedding model {self.MODEL_NAME} ...")
                         self._model = SentenceTransformer(self.MODEL_NAME)
                         logger.info(f"Embedding model loaded ({self.DIMS} dims)")
@@ -65,7 +65,7 @@ class EmbeddingService:
         # normalize_embeddings=True ensures cosine similarity == dot product,
         # which aligns with pgvector's vector_cosine_ops index.
         vector = model.encode(text, normalize_embeddings=True)
-        return vector.tolist()
+        return list(vector.tolist())
 
     def embed_incident(self, incident: Incident, extra_context: dict | None = None) -> list[float]:
         """

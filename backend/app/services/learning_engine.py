@@ -213,6 +213,7 @@ class LearningEngine:
                     try:
                         # Fetch postmortem for resolution details (best-effort)
                         from sqlalchemy import select as sa_select
+
                         from app.models.postmortem import Postmortem
                         pm_stmt = sa_select(Postmortem).where(
                             Postmortem.incident_id == outcome.incident_id

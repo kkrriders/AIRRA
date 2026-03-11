@@ -655,7 +655,6 @@ class ToggleFeatureFlagExecutor(ActionExecutor):
         return True, None
 
     async def rollback(self, target: str, execution_result: ExecutionResult) -> ExecutionResult:
-        started_at = datetime.now(timezone.utc)
         details = execution_result.details
         prev_enabled = not details.get("enabled", False)
         return await self.execute(target, {**execution_result.details, "enabled": prev_enabled})

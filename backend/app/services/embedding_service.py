@@ -67,7 +67,7 @@ class EmbeddingService:
         vector = model.encode(text, normalize_embeddings=True)
         return vector.tolist()
 
-    def embed_incident(self, incident: "Incident", extra_context: dict | None = None) -> list[float]:
+    def embed_incident(self, incident: Incident, extra_context: dict | None = None) -> list[float]:
         """
         Embed an incident using IncidentSummarizer's structured text.
 

@@ -5,7 +5,6 @@ Called after incident creation (anomaly_monitor, API) and after resolution
 (learning_engine) to keep embeddings rich with outcome context.
 """
 import asyncio
-import logging
 from uuid import UUID
 
 from celery.utils.log import get_task_logger

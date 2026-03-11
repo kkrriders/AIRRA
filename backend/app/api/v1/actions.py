@@ -270,7 +270,8 @@ async def execute_action(
         # the service.
         if success:
             try:
-                from app.worker.tasks.verification import verify_action_task  # deferred to avoid circular import
+                # deferred to avoid circular import
+                from app.worker.tasks.verification import verify_action_task
                 verify_action_task.delay(str(action_id), str(action.incident_id))
                 logger.info(f"Verification task queued for action {action_id}")
             except Exception as v_err:

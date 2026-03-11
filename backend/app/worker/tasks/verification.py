@@ -19,7 +19,6 @@ Rollback policy:
     - SUCCESS                    → no further action (incident already RESOLVED)
 """
 import asyncio
-import logging
 from datetime import datetime, timezone
 from uuid import UUID
 

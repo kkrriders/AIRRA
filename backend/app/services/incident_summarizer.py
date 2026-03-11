@@ -67,7 +67,7 @@ class IncidentSummarizer:
     and keeps the embedding space interpretable.
     """
 
-    def summarize(self, incident: "Incident", extra_context: dict | None = None) -> str:
+    def summarize(self, incident: Incident, extra_context: dict | None = None) -> str:
         """
         Build a compact structured text representation of an incident.
 

@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, ValidationInfo, field_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: PostgresDsn = Field(  # type: ignore[assignment]
+    database_url: str = Field(
         default="postgresql+asyncpg://airra:airra@localhost:5432/airra",
         description="PostgreSQL connection string"
     )
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     database_echo: bool = Field(default=False, description="Log SQL queries")
 
     # Redis
-    redis_url: RedisDsn = Field(  # type: ignore[assignment]
+    redis_url: str = Field(
         default="redis://localhost:6379/0",
         description="Redis connection string"
     )

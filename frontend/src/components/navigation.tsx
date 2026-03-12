@@ -7,15 +7,17 @@
  */
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Bell, Users, Activity, BarChart3, UserCheck } from 'lucide-react';
+import { Home, Bell, Users, Activity, BarChart3, UserCheck, ShieldCheck, BrainCircuit } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: Home },
   { href: '/incidents', label: 'Incidents', icon: Activity },
+  { href: '/approvals', label: 'Approvals', icon: ShieldCheck },
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/on-call', label: 'On-Call', icon: Users },
   { href: '/engineers', label: 'Engineers', icon: UserCheck },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/learning', label: 'Learning', icon: BrainCircuit },
 ];
 
 export function Navigation() {

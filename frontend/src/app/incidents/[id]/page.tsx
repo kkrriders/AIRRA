@@ -32,7 +32,6 @@ import {
   FileText
 } from "lucide-react";
 import { toast } from "sonner";
-import { Navbar } from "@/components/layout/Navbar";
 import PostIncidentReviewForm from "@/components/incidents/PostIncidentReviewForm";
 import PostIncidentReviewDisplay from "@/components/incidents/PostIncidentReviewDisplay";
 
@@ -106,7 +105,6 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <Navbar />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -120,7 +118,6 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   if (!incident) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <Navbar />
         <div className="flex-1 flex items-center justify-center">
           <Card className="max-w-md border-border/50 bg-card/50">
             <CardContent className="py-12 text-center">
@@ -143,8 +140,6 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <Navbar />
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Navigation Breadcrumb */}
         <div className="mb-6">

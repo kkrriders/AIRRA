@@ -3,7 +3,6 @@ Unit tests for app/services/notification_service.py
 
 Covers pure-logic helpers and send-path using mocked DB/SMTP/httpx.
 """
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -422,5 +421,5 @@ class TestSendNotificationInternal:
 
 class TestGlobalNotificationServiceInstance:
     def test_global_instance_exists(self):
-        from app.services.notification_service import notification_service, NotificationService
+        from app.services.notification_service import NotificationService, notification_service
         assert isinstance(notification_service, NotificationService)

@@ -5,7 +5,6 @@ Covers AssignmentResult, auto_assign (on_call + load_balanced strategies),
 assign_manual, unassign, _assign_engineer, _unassign_engineer,
 and _send_assignment_notification error handling.
 """
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -15,7 +14,6 @@ from app.services.incident_assigner import (
     IncidentAssigner,
     incident_assigner,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -3,19 +3,16 @@ Unit tests for app/utils/deduplication.py
 
 Pure functions tested without DB; async DB functions use AsyncMock.
 """
-import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from app.utils.deduplication import (
-    FUZZY_SIMILARITY_THRESHOLD,
     SEVERITY_LOOKBACK_WINDOWS,
     calculate_token_similarity,
+    create_or_update_incident,
+    find_duplicate_incident,
     generate_incident_fingerprint,
     is_fuzzy_match,
     normalize_text,
-    find_duplicate_incident,
-    create_or_update_incident,
 )
 
 
@@ -208,7 +205,7 @@ class TestFindDuplicateIncident:
 
     async def test_returns_existing_on_exact_fingerprint_match(self):
         from unittest.mock import MagicMock
-        from app.models.incident import IncidentSeverity, IncidentStatus
+
 
         # Build a fake existing incident with matching fingerprint data
         service = "payment-service"
@@ -271,7 +268,6 @@ class TestFindDuplicateIncident:
 
 class TestCreateOrUpdateIncident:
     async def test_creates_new_incident_when_no_duplicate(self):
-        from app.models.incident import Incident
 
         db = AsyncMock()
         # No duplicate found
@@ -302,7 +298,7 @@ class TestCreateOrUpdateIncident:
 
     async def test_updates_existing_incident_on_duplicate(self):
         from unittest.mock import MagicMock
-        from app.models.incident import IncidentSeverity
+
 
         service = "payment-service"
         description = "memory leak in cache"

@@ -3,13 +3,11 @@ Unit tests for app/services/audit_service.py
 
 Uses AsyncMock for DB sessions.
 """
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 from app.models.audit_log import AgentAuditLog, AuditEventType
 from app.services.audit_service import write_audit_log
-
 
 INCIDENT_ID = uuid4()
 ACTION_ID = uuid4()

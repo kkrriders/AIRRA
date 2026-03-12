@@ -4,17 +4,15 @@ Additional unit tests for app/utils/deduplication.py
 Covers the fuzzy-match path (lines 282-298) and commit/rollback branches
 in create_or_update_incident (lines 401-404, 429-432).
 """
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 from app.utils.deduplication import (
     create_or_update_incident,
     find_duplicate_incident,
-    generate_incident_fingerprint,
-    is_fuzzy_match,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fuzzy match path in find_duplicate_incident (lines 282-298)

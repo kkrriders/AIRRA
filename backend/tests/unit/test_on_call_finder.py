@@ -3,9 +3,8 @@ Unit tests for app/services/on_call_finder.py
 
 Covers OnCallResult and the DB-driven methods using AsyncMock.
 """
-import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from app.models.on_call_schedule import OnCallPriority

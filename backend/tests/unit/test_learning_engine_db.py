@@ -6,12 +6,10 @@ Focuses on DB-backed paths not covered by test_learning_engine.py:
 - load_patterns_from_db: warms L1 cache from DB rows
 - generate_insights: returns summary dict from DB queries
 """
-import pytest
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.learning_engine import LearningEngine, PatternSignature, _SEED_PATTERNS
-
+from app.services.learning_engine import _SEED_PATTERNS, LearningEngine, PatternSignature
 
 # ---------------------------------------------------------------------------
 # Helpers

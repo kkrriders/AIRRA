@@ -3,15 +3,12 @@ Unit tests for app/services/token_service.py
 
 Uses patched settings to avoid needing real secret values.
 """
-import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from pydantic import SecretStr
 
-
-def _make_token_service() -> "TokenService":
+def _make_token_service():
     """Create a TokenService with a test secret."""
     from app.services.token_service import TokenService
 
@@ -23,7 +20,6 @@ def _make_token_service() -> "TokenService":
 class TestTokenServiceInit:
     def test_init_uses_notification_token_secret(self, monkeypatch):
         """When notification_token_secret is set, it should be used."""
-        from app.config import Settings
 
         mock_settings = MagicMock()
         mock_settings.notification_token_secret.get_secret_value.return_value = "my_notif_secret"

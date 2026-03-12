@@ -3,11 +3,12 @@ Unit tests for LearningEngine.capture_outcome (lines 135-251).
 
 Uses mocked get_db_context + embed_incident_task to stay pure unit tests.
 """
-import pytest
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 from app.services.learning_engine import IncidentOutcome, LearningEngine
 

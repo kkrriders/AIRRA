@@ -5,17 +5,16 @@ Covers DB-driven paths:
 - send_incident_notification (lines 73-124)
 - _build_incident_message (lines 133-176)
 """
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from app.models.notification import (
     NotificationChannel,
     NotificationPriority,
-    NotificationStatus,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -229,7 +228,7 @@ class TestSendIncidentNotification:
         with patch("app.services.notification_service.token_service") as mock_ts, \
              patch.object(svc, "_send_notification", AsyncMock(return_value=True)):
             mock_ts.generate_token.return_value = ("tok:eng:notif:sig", datetime.now(timezone.utc))
-            result = await svc.send_incident_notification(
+            await svc.send_incident_notification(
                 db=db,
                 engineer_id=eng.id,
                 incident_id=inc.id,
@@ -272,7 +271,7 @@ class TestSendIncidentNotification:
         with patch("app.services.notification_service.token_service") as mock_ts, \
              patch.object(svc, "_send_notification", AsyncMock(return_value=True)):
             mock_ts.generate_token.return_value = ("tok:eng:notif:sig", datetime.now(timezone.utc))
-            result = await svc.send_incident_notification(
+            await svc.send_incident_notification(
                 db=db,
                 engineer_id=eng.id,
                 incident_id=inc.id,

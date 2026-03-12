@@ -4,16 +4,13 @@ Unit tests for app/services/dependency_graph.py
 Pure in-memory logic — no DB or HTTP deps needed.
 Uses programmatic population to avoid file-system complexity.
 """
-import os
-import pytest
-import yaml
-from pathlib import Path
 from unittest.mock import patch
+
+import yaml
 
 from app.services.dependency_graph import (
     DependencyGraph,
     ServiceDependency,
-    get_dependency_graph,
 )
 
 
@@ -96,7 +93,7 @@ class TestDependencyGraphInit:
             created_calls.append(True)
 
         monkeypatch.setattr(DependencyGraph, "_create_example_config", fake_create)
-        graph = DependencyGraph(config_path=str(config_file))
+        DependencyGraph(config_path=str(config_file))
         assert created_calls == [True]
 
     def test_reverse_deps_populated(self, tmp_path):

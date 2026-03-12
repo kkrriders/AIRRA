@@ -4,17 +4,13 @@ Unit tests for app/services/operator_feedback.py
 Uses tmp_path for all file I/O. Covers record/load/analysis/reporting.
 """
 import json
-import pytest
 from datetime import datetime, timezone
-from pathlib import Path
 
 from app.models.action import ActionType
 from app.services.operator_feedback import (
     FeedbackType,
     OperatorFeedback,
     OperatorFeedbackCollector,
-    FeedbackSummary,
-    get_operator_feedback_collector,
 )
 
 
@@ -53,18 +49,18 @@ def _make_feedback(
 class TestOperatorFeedbackCollectorInit:
     def test_creates_storage_file(self, tmp_path):
         storage = tmp_path / "feedback.jsonl"
-        collector = OperatorFeedbackCollector(storage_path=str(storage))
+        OperatorFeedbackCollector(storage_path=str(storage))
         assert storage.exists()
 
     def test_nested_dir_created(self, tmp_path):
         storage = tmp_path / "sub" / "dir" / "feedback.jsonl"
-        collector = OperatorFeedbackCollector(storage_path=str(storage))
+        OperatorFeedbackCollector(storage_path=str(storage))
         assert storage.exists()
 
     def test_existing_file_not_truncated(self, tmp_path):
         storage = tmp_path / "feedback.jsonl"
         storage.write_text("existing\n")
-        collector = OperatorFeedbackCollector(storage_path=str(storage))
+        OperatorFeedbackCollector(storage_path=str(storage))
         assert storage.read_text() == "existing\n"
 
 
@@ -92,7 +88,7 @@ class TestRecordFeedback:
         collector = OperatorFeedbackCollector(storage_path=str(storage))
         fb = _make_feedback()
         collector.record_feedback(fb)
-        lines = [l for l in storage.read_text().strip().split("\n") if l]
+        lines = [line for line in storage.read_text().strip().split("\n") if line]
         assert len(lines) == 1
         data = json.loads(lines[0])
         assert data["incident_id"] == "inc-001"
@@ -126,7 +122,7 @@ class TestRecordFeedback:
         collector = OperatorFeedbackCollector(storage_path=str(storage))
         collector.record_feedback(_make_feedback(incident_id="i1"))
         collector.record_feedback(_make_feedback(incident_id="i2"))
-        lines = [l for l in storage.read_text().strip().split("\n") if l]
+        lines = [line for line in storage.read_text().strip().split("\n") if line]
         assert len(lines) == 2
 
 
@@ -379,8 +375,6 @@ class TestGetOperatorFeedbackCollector:
         import app.services.operator_feedback as mod
         monkeypatch.setattr(mod, "_operator_feedback_collector", None)
         # Patch __init__ to use tmp dir
-        orig_init = OperatorFeedbackCollector.__init__
-
         def patched_init(self, storage_path="data/operator_feedback.jsonl"):
             self.storage_path = str(tmp_path / "feedback.jsonl")
             OperatorFeedbackCollector._ensure_storage_exists(self)

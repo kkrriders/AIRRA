@@ -4,16 +4,16 @@ Unit tests for app/services/learning_engine.py
 Focuses on pure-logic methods: PatternSignature, L1 cache, seed fallbacks,
 and the _update_pattern_library logic using mocked DB sessions.
 """
-import pytest
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from app.services.learning_engine import (
+    _SEED_PATTERNS,
     IncidentOutcome,
     LearningEngine,
     PatternSignature,
-    _SEED_PATTERNS,
 )
 
 

@@ -3,8 +3,9 @@ Unit tests for app/utils/transactions.py
 
 Uses a mock AsyncSession to test transaction context manager behavior.
 """
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.utils.transactions import transaction, with_transaction
 

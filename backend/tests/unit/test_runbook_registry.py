@@ -3,18 +3,13 @@ Unit tests for app/services/runbook_registry.py
 
 Tests the registry with programmatic population to avoid filesystem config deps.
 """
-import os
-import pytest
 import yaml
-from pathlib import Path
-from unittest.mock import patch
 
 from app.models.action import ActionType, RiskLevel
 from app.services.runbook_registry import (
     Runbook,
     RunbookAction,
     RunbookRegistry,
-    get_runbook_registry,
 )
 
 
@@ -161,7 +156,7 @@ class TestRunbookRegistryWithYamlConfig:
             created_calls.append(True)
 
         monkeypatch.setattr(RunbookRegistry, "_create_example_runbooks", fake_create)
-        registry = RunbookRegistry(config_path=str(config_file))
+        RunbookRegistry(config_path=str(config_file))
         assert created_calls == [True]
 
     def test_invalid_config_results_in_empty_registry(self, tmp_path):

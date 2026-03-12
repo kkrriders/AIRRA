@@ -3,7 +3,6 @@ Unit tests for app/services/prompt_guard.py
 
 Pure regex logic — no external dependencies.
 """
-import pytest
 
 from app.services.prompt_guard import scan_for_injection
 

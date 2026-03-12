@@ -3,7 +3,6 @@ Unit tests for app/core/perception/alert_deduplication.py
 
 Pure in-memory logic — no external deps needed.
 """
-import pytest
 from datetime import datetime, timedelta, timezone
 
 from app.core.perception.alert_deduplication import (

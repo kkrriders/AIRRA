@@ -4,14 +4,11 @@ Unit tests for app/services/confidence_tracker.py
 Pure computation — no DB/external deps. Uses tmp_path for file I/O.
 """
 import json
-import pytest
 from datetime import datetime, timezone
-from pathlib import Path
 
 from app.services.confidence_tracker import (
     ConfidenceOutcomeRecord,
     ConfidenceTracker,
-    get_confidence_tracker,
 )
 
 
@@ -43,13 +40,13 @@ def _make_record(
 class TestConfidenceTrackerInit:
     def test_creates_storage_file(self, tmp_path):
         storage = tmp_path / "subdir" / "tracking.jsonl"
-        tracker = ConfidenceTracker(storage_path=str(storage))
+        ConfidenceTracker(storage_path=str(storage))
         assert storage.exists()
 
     def test_existing_file_not_recreated(self, tmp_path):
         storage = tmp_path / "tracking.jsonl"
         storage.write_text("existing\n")
-        tracker = ConfidenceTracker(storage_path=str(storage))
+        ConfidenceTracker(storage_path=str(storage))
         assert storage.read_text() == "existing\n"
 
 
@@ -69,7 +66,7 @@ class TestRecordOutcome:
         tracker = ConfidenceTracker(storage_path=str(storage))
         tracker.record_outcome(_make_record(confidence=0.7))
         tracker.record_outcome(_make_record(confidence=0.9))
-        lines = [l for l in storage.read_text().strip().split("\n") if l]
+        lines = [line for line in storage.read_text().strip().split("\n") if line]
         assert len(lines) == 2
 
     def test_timestamp_serialized_as_isoformat(self, tmp_path):

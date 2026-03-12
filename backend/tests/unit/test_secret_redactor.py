@@ -3,7 +3,6 @@ Unit tests for app/services/secret_redactor.py
 
 Covers all secret patterns and edge cases.
 """
-import pytest
 
 from app.services.secret_redactor import redact_secrets
 

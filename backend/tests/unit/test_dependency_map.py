@@ -4,20 +4,17 @@ Unit tests for app/services/dependency_map.py
 Tests StaticDependencyAdapter with its default in-memory config and
 via tmp_path YAML configs.
 """
+
 import pytest
 import yaml
-from pathlib import Path
-from unittest.mock import patch
 
 from app.services.dependency_map import (
     BlastRadius,
-    CMDBAdapter,
     DependencyType,
     ServiceDependency,
     ServiceMetadata,
     ServiceTier,
     StaticDependencyAdapter,
-    get_dependency_adapter,
     get_service_context,
 )
 
@@ -266,7 +263,6 @@ class TestGetDependencyAdapter:
         import app.services.dependency_map as mod
         monkeypatch.setattr(mod, "_adapter", None)
         # Prevent file IO during test
-        orig_load = StaticDependencyAdapter._load_config
         monkeypatch.setattr(StaticDependencyAdapter, "_load_config", lambda self: None)
         StaticDependencyAdapter.__init__.__defaults__
         adapter = mod.get_dependency_adapter()

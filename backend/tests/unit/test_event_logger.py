@@ -3,13 +3,11 @@ Unit tests for app/services/event_logger.py
 
 Uses AsyncMock for DB sessions — no real DB needed.
 """
-import pytest
-from unittest.mock import AsyncMock, MagicMock, call, patch
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock
+from uuid import uuid4
 
 from app.models.incident_event import IncidentEventType
 from app.services.event_logger import EventLogger, event_logger
-
 
 INCIDENT_ID = uuid4()
 
@@ -19,7 +17,7 @@ class TestEventLoggerLog:
         db = AsyncMock()
         db.flush = AsyncMock()
         logger = EventLogger()
-        event = await logger.log(
+        await logger.log(
             db=db,
             incident_id=INCIDENT_ID,
             event_type=IncidentEventType.DETECTED,

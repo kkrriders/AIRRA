@@ -3,13 +3,11 @@ Unit tests for app/services/incident_summarizer.py
 
 Uses MagicMock for the Incident ORM object — no DB needed.
 """
-import pytest
 from unittest.mock import MagicMock
 
 from app.services.incident_summarizer import (
     IncidentSummarizer,
     _infer_error_patterns,
-    get_summarizer,
 )
 
 
@@ -143,7 +141,7 @@ class TestIncidentSummarizerSummarize:
         result = self.summarizer.summarize(incident)
         assert "..." in result
         # Original 400-char desc should be truncated
-        lines = [l for l in result.split("\n") if l.startswith("Description:")]
+        lines = [line for line in result.split("\n") if line.startswith("Description:")]
         assert len(lines[0]) < 400
 
     def test_description_not_truncated_when_short(self):
@@ -164,12 +162,11 @@ class TestIncidentSummarizerSummarize:
     def test_extra_context_description_limit_reduced(self):
         long_desc = "x" * 200
         incident = _mock_incident(description=long_desc)
-        result_plain = self.summarizer.summarize(incident)
         result_ctx = self.summarizer.summarize(
             incident, extra_context={"actual_root_cause": "bug"}
         )
         # With context, description is limited to 150 chars
-        desc_line_ctx = [l for l in result_ctx.split("\n") if l.startswith("Description:")][0]
+        desc_line_ctx = [line for line in result_ctx.split("\n") if line.startswith("Description:")][0]
         assert len(desc_line_ctx) <= 165  # "Description: " + 150 + "..."
 
     def test_extra_context_empty_root_cause_skipped(self):
@@ -318,14 +315,14 @@ class TestIncidentSummarizerSummarize:
         incident = _mock_incident(metrics_snapshot=metrics)
         result = self.summarizer.summarize(incident)
         # Count anomaly lines (lines starting with "  - ")
-        anomaly_lines = [l for l in result.split("\n") if l.strip().startswith("- ")]
+        anomaly_lines = [line for line in result.split("\n") if line.strip().startswith("- ")]
         assert len(anomaly_lines) <= 5
 
     def test_extra_context_root_cause_truncated_at_200(self):
         long_rc = "R" * 300
         incident = _mock_incident()
         result = self.summarizer.summarize(incident, extra_context={"actual_root_cause": long_rc})
-        rc_line = [l for l in result.split("\n") if l.startswith("Root cause:")][0]
+        rc_line = [line for line in result.split("\n") if line.startswith("Root cause:")][0]
         # Should be "Root cause: " + 200 chars
         assert len(rc_line) <= len("Root cause: ") + 200
 

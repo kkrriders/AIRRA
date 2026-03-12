@@ -36,7 +36,11 @@
       "Bash(node:*)",
       "Bash(npx tsc:*)",
       "Bash(tasklist:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(cd /c/Users/karti/AIRRA/backend && timeout 30 python -m pytest \"tests/unit/test_learning_engine_capture.py::TestCaptureOutcome::test_basic_capture_with_no_hypothesis_or_action\" --no-cov --no-header -s 2>&1; echo \"EXIT: $?\")",
+      "Bash(cd /c/Users/karti/AIRRA/backend && timeout 60 python -m pytest tests/unit/test_learning_engine_capture.py --no-cov --no-header -q 2>&1; echo \"EXIT: $?\")",
+      "Bash(cd /c/Users/karti/AIRRA/backend && timeout 30 python -m pytest tests/unit/test_learning_engine_db.py --no-cov --no-header -q 2>&1; echo \"EXIT: $?\")",
+      "Bash(cd /c/Users/karti/AIRRA/backend && timeout 30 python -m pytest tests/unit/test_deduplication_extra.py --no-cov --no-header -q 2>&1; echo \"EXIT: $?\")"
     ]
   },
   "outputStyle": "Explanatory"

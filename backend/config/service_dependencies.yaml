@@ -1,0 +1,48 @@
+services:
+  frontend:
+    depends_on:
+    - api-gateway
+    tier: tier-1
+    team: frontend
+    criticality: high
+  api-gateway:
+    depends_on:
+    - auth-service
+    - payment-service
+    - order-service
+    tier: tier-1
+    team: platform
+    criticality: critical
+  payment-service:
+    depends_on:
+    - database
+    - redis
+    - payment-gateway
+    tier: tier-1
+    team: payments
+    criticality: critical
+  order-service:
+    depends_on:
+    - database
+    - redis
+    - payment-service
+    tier: tier-2
+    team: orders
+    criticality: high
+  auth-service:
+    depends_on:
+    - database
+    - redis
+    tier: tier-1
+    team: platform
+    criticality: critical
+  database:
+    depends_on: []
+    tier: tier-0
+    team: infrastructure
+    criticality: critical
+  redis:
+    depends_on: []
+    tier: tier-0
+    team: infrastructure
+    criticality: high

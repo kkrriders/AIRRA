@@ -18,6 +18,7 @@ from app.schemas.assignment import (
     AutoAssignRequest,
 )
 from app.schemas.incident import (
+    AnalysisAcceptedResponse,
     IncidentCreate,
     IncidentListResponse,
     IncidentResponse,
@@ -214,7 +215,7 @@ async def update_incident(
 
 @router.post(
     "/{incident_id}/analyze",
-    response_model=dict,
+    response_model=AnalysisAcceptedResponse,
     status_code=202,
     dependencies=[Depends(llm_rate_limit)],
 )
@@ -257,12 +258,26 @@ async def analyze_incident(
     # import means import failures in the worker package don't crash the API process.
     # send_task() dispatches by registered task name string, keeping the packages
     # loosely coupled. This trade-off is deliberate — do not move to module level.
-    from app.worker.celery_app import celery_app  # noqa: PLC0415
-    celery_app.send_task(
-        "app.worker.tasks.analysis.analyze_incident",
-        args=[str(incident_id)],
-        queue="analysis",
-    )
+    try:
+        from app.worker.celery_app import celery_app  # noqa: PLC0415
+        celery_app.send_task(
+            "app.worker.tasks.analysis.analyze_incident",
+            args=[str(incident_id)],
+            queue="analysis",
+        )
+    except Exception as task_err:
+        # MED-7 fix: revert status so the incident doesn't get stuck in ANALYZING
+        # forever with no worker processing it (Redis broker outage path).
+        logger.error(
+            f"Failed to enqueue analysis task for incident {incident_id}: {task_err}",
+            exc_info=True,
+        )
+        incident.status = IncidentStatus.DETECTED
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="Analysis queue temporarily unavailable. Please try again.",
+        )
 
     logger.info(
         f"Analysis enqueued for incident {incident_id}",

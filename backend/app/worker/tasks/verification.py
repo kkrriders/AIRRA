@@ -28,6 +28,12 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.core.execution.base import ExecutionResult, ExecutionStatus
+
+# Task time limits derived from the stabilization window so the Celery soft/hard
+# limits never fire mid-sleep.  Computed once at import time (settings available).
+_STABILIZATION = settings.verification_stabilization_seconds
+_TASK_SOFT_LIMIT = _STABILIZATION + 30   # grace for Prometheus query + DB writes
+_TASK_HARD_LIMIT = _STABILIZATION + 60
 from app.core.execution.kubernetes import get_executor
 from app.core.execution.verification import PostActionVerifier, VerificationStatus
 from app.database import get_db_context
@@ -48,6 +54,8 @@ logger = get_task_logger(__name__)
     name="app.worker.tasks.verification.verify_action_task",
     acks_late=True,
     queue="celery",
+    time_limit=_TASK_HARD_LIMIT,
+    soft_time_limit=_TASK_SOFT_LIMIT,
 )
 def verify_action_task(self: Task, action_id: str, incident_id: str) -> dict:
     """

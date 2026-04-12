@@ -116,3 +116,11 @@ class OnCallListResponse(BaseModel):
     page: int = Field(..., ge=1)
     page_size: int = Field(..., ge=1, le=100)
     pages: int = Field(..., ge=0)
+
+
+class OnCallLookupResponse(BaseModel):
+    """Response from POST /on-call/find-current."""
+
+    engineer: dict
+    schedule: dict
+    priority: str

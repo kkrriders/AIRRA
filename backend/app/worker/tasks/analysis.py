@@ -6,6 +6,7 @@ instead of blocking the HTTP response. The endpoint now returns 202 immediately
 and enqueues this task.
 """
 import asyncio
+from datetime import datetime, timezone
 from uuid import UUID
 
 from celery import Task
@@ -280,6 +281,7 @@ async def _run_analysis(incident_id: str) -> dict:
                             },
                         }
                         incident.status = IncidentStatus.PENDING_APPROVAL
+                        incident.pending_approval_at = datetime.now(timezone.utc)
                         return {
                             "status": "similarity_skip",
                             "source_incident": str(top_row.Incident.id),
@@ -428,6 +430,7 @@ async def _run_analysis(incident_id: str) -> dict:
                 db.add(action)
 
             incident.status = IncidentStatus.PENDING_APPROVAL
+            incident.pending_approval_at = datetime.now(timezone.utc)
 
             logger.info(
                 f"Analysis complete for incident {incident_id}: "

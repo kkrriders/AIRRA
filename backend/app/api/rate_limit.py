@@ -19,6 +19,7 @@ eliminates two bugs present in the pipeline approach:
 Falls back to in-memory token bucket if Redis is unavailable, so the API
 keeps serving requests even during a Redis outage (degraded, not broken).
 """
+import asyncio
 import logging
 import time
 import uuid
@@ -81,23 +82,28 @@ end
 # ---------------------------------------------------------------------------
 
 class _TokenBucket:
-    __slots__ = ("tokens", "last_refill", "max_tokens", "refill_rate")
+    # MED-1 fix: _lock prevents concurrent coroutines from interleaving between
+    # the read-compute-write on self.tokens in a single-threaded async context.
+    # prefork-safe (each worker process has its own bucket dict), NOT eventlet/gevent-safe.
+    __slots__ = ("tokens", "last_refill", "max_tokens", "refill_rate", "_lock")
 
     def __init__(self, max_tokens: float, refill_rate: float):
         self.tokens = max_tokens
         self.last_refill = time.monotonic()
         self.max_tokens = max_tokens
         self.refill_rate = refill_rate
+        self._lock = asyncio.Lock()
 
-    def consume(self) -> bool:
-        now = time.monotonic()
-        elapsed = now - self.last_refill
-        self.tokens = min(self.max_tokens, self.tokens + elapsed * self.refill_rate)
-        self.last_refill = now
-        if self.tokens >= 1.0:
-            self.tokens -= 1.0
-            return True
-        return False
+    async def consume(self) -> bool:
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.last_refill
+            self.tokens = min(self.max_tokens, self.tokens + elapsed * self.refill_rate)
+            self.last_refill = now
+            if self.tokens >= 1.0:
+                self.tokens -= 1.0
+                return True
+            return False
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +154,7 @@ class RateLimiter:
             logger.warning(
                 f"Redis rate limiter unavailable, falling back to in-memory: {exc}"
             )
-            allowed = self._fallback_buckets[client_ip].consume()
+            allowed = await self._fallback_buckets[client_ip].consume()
 
         if not allowed:
             logger.warning(

@@ -110,6 +110,14 @@ class IncidentFilter(BaseModel):
         return v
 
 
+class AnalysisAcceptedResponse(BaseModel):
+    """202 response from POST /incidents/{id}/analyze."""
+
+    status: str = Field(..., examples=["accepted"])
+    incident_id: str
+    poll: str = Field(..., description="URL to poll for status updates")
+
+
 # Rebuild model to resolve forward references
 from app.schemas.action import ActionResponse  # noqa: E402
 from app.schemas.hypothesis import HypothesisResponse  # noqa: E402

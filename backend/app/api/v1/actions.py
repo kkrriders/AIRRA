@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.rate_limit import write_rate_limit
 from app.core.execution.base import ExecutionStatus
 from app.core.execution.kubernetes import get_executor
 from app.database import get_db
@@ -16,7 +17,7 @@ from app.models.hypothesis import Hypothesis
 from app.models.incident import Incident, IncidentStatus
 from app.schemas.action import ActionResponse
 from app.services.audit_service import write_audit_log
-from app.services.learning_engine import IncidentOutcome, LearningEngine
+from app.services.learning_engine import IncidentOutcome, get_learning_engine
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ async def get_incident_actions(
     return actions
 
 
-@router.post("/{action_id}/execute", response_model=ActionResponse)
+@router.post("/{action_id}/execute", response_model=ActionResponse, dependencies=[Depends(write_rate_limit)])
 async def execute_action(
     action_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -255,7 +256,7 @@ async def execute_action(
                     human_override=False,
                     resolution_notes=f"Resolved via {action.action_type.value} in {action.execution_mode} mode",
                 )
-                engine = LearningEngine()
+                engine = get_learning_engine()
                 await engine.capture_outcome(outcome)
             except Exception as learn_err:
                 # Learning failures must never break the execution response.

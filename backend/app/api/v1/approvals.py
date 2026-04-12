@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.rate_limit import write_rate_limit
 from app.database import get_db
 from app.models.action import Action, ActionStatus
 from app.models.audit_log import AuditEventType
@@ -45,7 +46,7 @@ async def get_pending_approvals(
     return actions
 
 
-@router.post("/{action_id}/approve", response_model=ActionResponse)
+@router.post("/{action_id}/approve", response_model=ActionResponse, dependencies=[Depends(write_rate_limit)])
 async def approve_action(
     action_id: UUID,
     approval_data: ActionApprove,
@@ -129,7 +130,7 @@ async def approve_action(
     return action
 
 
-@router.post("/{action_id}/reject", response_model=ActionResponse)
+@router.post("/{action_id}/reject", response_model=ActionResponse, dependencies=[Depends(write_rate_limit)])
 async def reject_action(
     action_id: UUID,
     rejection_data: ActionReject,

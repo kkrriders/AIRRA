@@ -255,7 +255,7 @@ def calculate_hypothesis_confidence(
                 elif hypothesis.category == "network_issue" and len(svc_info.depends_on) >= 3:
                     final_confidence += 0.05
         except Exception:
-            pass  # dep graph unavailable — non-fatal, skip boost
+            logger.debug("Dependency graph unavailable — skipping topology confidence boost", exc_info=True)
 
     # Apply learned pattern adjustment from historical outcomes
     # Positive when this service:category has resolved correctly before, negative otherwise
@@ -512,7 +512,7 @@ Anomaly #{i}:
                         f"**Criticality:** {svc_info.criticality}"
                     )
         except Exception:
-            pass  # dep graph unavailable — non-fatal
+            logger.debug("Dependency graph unavailable — skipping service topology context in prompt", exc_info=True)
 
         # Add task instruction
         prompt_parts.extend(

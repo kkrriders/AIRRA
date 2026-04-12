@@ -102,6 +102,16 @@ class NotificationAcknowledge(BaseModel):
     token: str = Field(..., min_length=1, description="Acknowledgement token from email")
 
 
+class AcknowledgeResponse(BaseModel):
+    """Response from POST /notifications/acknowledge."""
+
+    status: str = Field(..., examples=["acknowledged", "already_acknowledged"])
+    acknowledged_at: str
+    response_time_seconds: int | None = None
+    sla_met: bool | None = None
+    incident_id: str | None = None
+
+
 class NotificationSendRequest(BaseModel):
     """Schema for manually sending a notification."""
 

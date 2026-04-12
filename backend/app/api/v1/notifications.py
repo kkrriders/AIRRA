@@ -19,6 +19,7 @@ from app.api.dependencies import verify_api_key
 from app.database import get_db
 from app.models.notification import Notification, NotificationStatus
 from app.schemas.notification import (
+    AcknowledgeResponse,
     NotificationAcknowledge,
     NotificationListResponse,
     NotificationResponse,
@@ -71,7 +72,7 @@ async def send_notification(
         raise HTTPException(status_code=500, detail="Failed to send notification")
 
 
-@router.post("/acknowledge", response_model=dict)
+@router.post("/acknowledge", response_model=AcknowledgeResponse)
 async def acknowledge_notification(
     ack_data: NotificationAcknowledge,
     db: AsyncSession = Depends(get_db),
@@ -89,7 +90,10 @@ async def acknowledge_notification(
     notification = result.scalar_one_or_none()
 
     if not notification:
-        raise HTTPException(status_code=404, detail="Invalid or expired token")
+        # Return 403 (not 404) to prevent token enumeration — an attacker must
+        # not be able to distinguish "token not in DB" from "token invalid" via
+        # the status code or message (MED-2 fix).
+        raise HTTPException(status_code=403, detail="Invalid or expired token")
 
     # Validate token
     is_valid, error = token_service.validate_token(
@@ -100,7 +104,10 @@ async def acknowledge_notification(
     )
 
     if not is_valid:
-        raise HTTPException(status_code=403, detail=f"Token validation failed: {error}")
+        # Generic message regardless of which validation step failed so partial
+        # token forgery attempts gain no information (MED-4 fix).
+        logger.debug("Token validation failed for notification %s: %s", notification.id, error)
+        raise HTTPException(status_code=403, detail="Invalid or expired token")
 
     # Check if already acknowledged
     if notification.acknowledged_at:

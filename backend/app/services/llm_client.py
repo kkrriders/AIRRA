@@ -15,15 +15,32 @@ import time
 from abc import ABC, abstractmethod
 from typing import TypeVar
 
+import anthropic
+import openai
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from prometheus_client import Counter, Histogram
 from pydantic import BaseModel
 from tenacity import (
+    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
+)
+
+# Transient exceptions that are safe to retry for each provider.
+# Authentication, permission, and validation errors are NOT retryable —
+# retrying them wastes up to 30s before surfacing the real error.
+_ANTHROPIC_RETRYABLE = (
+    anthropic.APIConnectionError,
+    anthropic.InternalServerError,
+    anthropic.RateLimitError,
+)
+_OPENAI_RETRYABLE = (
+    openai.APIConnectionError,
+    openai.InternalServerError,
+    openai.RateLimitError,
 )
 
 from app.config import settings
@@ -274,9 +291,10 @@ class AnthropicClient(LLMClient):
         self.max_tokens = max_tokens
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(_ANTHROPIC_RETRYABLE),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         stop=stop_after_attempt(3),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
     )
     async def _generate_raw(
         self,
@@ -380,9 +398,10 @@ class OpenAIClient(LLMClient):
         self.max_tokens = max_tokens
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type(_OPENAI_RETRYABLE),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         stop=stop_after_attempt(3),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
     )
     async def _generate_raw(
         self,

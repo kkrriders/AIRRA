@@ -139,7 +139,7 @@ prometheus ─┘                  celery-analysis├──▶ grafana
 ```
 
 On first startup AIRRA automatically:
-- Runs all 9 Alembic migrations (including pgvector extension + HNSW index)
+- Runs all 10 Alembic migrations (including pgvector extension + HNSW index)
 - Seeds 4 test engineers with on-call schedules
 - Creates 3–5 static demo incidents
 - Warms the embedding model on the first incident
@@ -170,7 +170,8 @@ On first startup AIRRA automatically:
 
 3. Engineer or Celery triggers POST /incidents/{id}/analyze
    └─ Status: DETECTED → ANALYZING (immediate DB write, <50ms)
-   └─ Returns 202 Accepted, enqueues analyze_incident task
+   └─ Returns 202 Accepted with { status, incident_id, poll } — poll URL for status updates
+   └─ If Celery queue unavailable: status reverts to DETECTED, returns 503 (incident not stranded)
 
 4. Analysis task (Celery worker, analysis queue)
    └─ Embeds current incident
@@ -185,6 +186,8 @@ On first startup AIRRA automatically:
    └─ LLM returns structured JSON: hypotheses + recommended actions
    └─ Hypothesis confidence boosted by topology signals (DB upstream → +0.08, etc.)
    └─ Status: ANALYZING → PENDING_APPROVAL
+   └─ incident.pending_approval_at set (UTC) — SLA escalation clock starts here,
+      not at updated_at (which resets on any field change)
 
 5. Notification service
    └─ Email (SMTP) or Slack (Block Kit webhook) to assigned SRE
@@ -320,6 +323,25 @@ The blast radius calculator now uses criticality-weighted downstream scoring and
 
 ### Embedding Model Cold Start
 `all-MiniLM-L6-v2` loads lazily on first use. The first embedding request per worker process takes ~2–4s (model load). Subsequent requests: ~20ms. In production, trigger a warm-up embed at worker startup.
+
+### Detection Latency Floor: ~75 Seconds
+
+AIRRA's current detection path is **poll-based**, not push-based. Total worst-case latency before an incident is created:
+
+| Step | Latency |
+|------|---------|
+| Prometheus scrape interval (`prometheus.yml`) | 15 s |
+| Celery Beat interval (`ANOMALY_CHECK_INTERVAL_SECONDS`) | 60 s |
+| Task queue pickup + query execution | 5–10 s |
+| **Worst-case total** | **~75–85 s** |
+
+If an anomaly fires 1 second after the Beat just ran, the system won't detect it for another ~70 seconds. For critical payment or authentication failures this is a meaningful exposure window — thousands of transactions can fail in 60 seconds.
+
+**Why this matters for production fintech**: P1 SLAs typically require detection in <30 seconds, not 75+.
+
+**Production path to sub-10-second detection**: Prometheus already evaluates alerting rules every 15 seconds (`evaluation_interval: 15s` in `prometheus.yml` — already configured). Wiring **Prometheus Alertmanager → AIRRA webhook endpoint** would push anomalies immediately on rule evaluation, bypassing the 60-second Beat cycle entirely. The Z-score logic would move into Prometheus recording rules; AIRRA receives a structured alert payload and skips directly to analysis.
+
+**Baseline window caveat**: The Z-score uses a 5-minute lookback window (`lookback_minutes=5` in `anomaly_monitor.py`) producing ~20 data points at 15s steps. This catches sudden spikes well but **will not detect gradual drift** — a slow memory leak over 30 minutes will shift the baseline along with the metric and may never cross 3σ.
 
 ### Single Celery Beat
 Redis-backed Beat state is shared, but `celery-beat` must run as a single replica. Multiple Beat instances would fire duplicate tasks. Enforce this constraint manually in production.
@@ -526,7 +548,8 @@ AIRRA/
 │   │   ├── 006_add_action_rejected_fields.py
 │   │   ├── 007_add_incident_embeddings.py  # pgvector extension + HNSW index
 │   │   ├── 008_add_trust_score.py          # incidents.trust_score NUMERIC(3,2)
-│   │   └── 009_add_agent_audit_logs.py     # agent_audit_logs table (append-only)
+│   │   ├── 009_add_agent_audit_logs.py     # agent_audit_logs table (append-only)
+│   │   └── 010_add_pending_approval_at.py  # incidents.pending_approval_at — accurate SLA clock
 │   ├── docs/adr/
 │   │   ├── 001_celery_over_asyncio_tasks.md
 │   │   ├── 002_hnsw_over_ivfflat.md
@@ -665,6 +688,9 @@ Each entry stores `event_type`, `actor` (human email or `"agent"`), `outcome`, `
 - [x] **Agent Audit Log** — append-only record of every agent decision with event type, actor, outcome, and metadata
 - [x] **Post-action verification** — automatic metric re-check after execution; regression detected → executor rolls back + incident escalated
 - [x] **Security controls** — prompt injection guard (OWASP LLM01), credential redaction before embedding (OWASP LLM06), trust-score-weighted RAG retrieval
+- [x] **Accurate escalation clock** — `pending_approval_at` column (migration 010) replaces `updated_at` as SLA timer; unrelated field updates no longer defer escalation
+- [x] **Resilient analysis dispatch** — `/analyze` returns 503 + reverts status to DETECTED if Celery queue is unavailable, preventing incidents stranded in ANALYZING
+- [ ] **Alertmanager webhook receiver** — replace 60s Beat polling with Prometheus Alertmanager push; reduces detection latency from ~75s to <15s (evaluation_interval already 15s)
 - [ ] **AWS Health API integration** — surface third-party incidents alongside Prometheus anomalies
 - [ ] **Multi-agent architecture** — specialized agents per stage using Anthropic Agent SDK
 - [ ] **MCP tools** — expose AIRRA's incident API as MCP tools for Claude integration

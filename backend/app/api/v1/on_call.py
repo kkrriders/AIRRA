@@ -20,6 +20,7 @@ from app.models.on_call_schedule import OnCallSchedule
 from app.schemas.on_call_schedule import (
     OnCallFindRequest,
     OnCallListResponse,
+    OnCallLookupResponse,
     OnCallScheduleCreate,
     OnCallScheduleResponse,
     OnCallScheduleUpdate,
@@ -189,7 +190,7 @@ async def delete_on_call_schedule(
     logger.info(f"Deleted on-call schedule {schedule_id}")
 
 
-@router.post("/find-current", response_model=dict)
+@router.post("/find-current", response_model=OnCallLookupResponse)
 async def find_current_on_call(
     request: OnCallFindRequest,
     db: AsyncSession = Depends(get_db),

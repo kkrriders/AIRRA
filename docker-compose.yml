@@ -1,6 +1,6 @@
 
 x-backend-env: &backend-env
-  AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
+  AIRRA_DATABASE_URL: postgresql+asyncpg://airra:${POSTGRES_PASSWORD:-airra}@postgres:5432/airra
   AIRRA_REDIS_URL: redis://redis:6379/0
   AIRRA_PROMETHEUS_URL: http://prometheus:9090
   AIRRA_ENVIRONMENT: development
@@ -21,7 +21,7 @@ services:
     container_name: airra-postgres
     environment:
       POSTGRES_USER: airra
-      POSTGRES_PASSWORD: airra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airra}
       POSTGRES_DB: airra
     ports:
       - "5432:5432"
@@ -75,7 +75,7 @@ services:
     container_name: airra-db-migrate
     command: alembic upgrade head
     environment:
-      AIRRA_DATABASE_URL: postgresql+asyncpg://airra:airra@postgres:5432/airra
+      AIRRA_DATABASE_URL: postgresql+asyncpg://airra:${POSTGRES_PASSWORD:-airra}@postgres:5432/airra
       AIRRA_REDIS_URL: redis://redis:6379/0
       AIRRA_API_KEY: ${AIRRA_API_KEY}
     depends_on:
@@ -186,7 +186,7 @@ services:
     container_name: airra-frontend
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_API_KEY: ${AIRRA_API_KEY}
+      BACKEND_API_KEY: ${AIRRA_API_KEY}
     ports:
       - "3000:3000"
     depends_on:
@@ -203,9 +203,8 @@ services:
     ports:
       - "3001:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env (e.g. openssl rand -hex 16)}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning

@@ -89,6 +89,14 @@ class SimulationResponse(BaseModel):
     metrics_injected: bool = False
 
 
+class SimulationStopResponse(BaseModel):
+    """Response from POST /simulations/{id}/stop."""
+
+    status: str = Field(..., examples=["stopped"])
+    simulation_id: str
+    details: dict
+
+
 # ============================================
 # API Endpoints
 # ============================================
@@ -305,7 +313,7 @@ async def start_scenario_simulation(
 
 @router.post(
     "/simulations/{simulation_id}/stop",
-    response_model=dict,
+    response_model=SimulationStopResponse,
     summary="Stop a running simulation",
 )
 async def stop_simulation(simulation_id: str):

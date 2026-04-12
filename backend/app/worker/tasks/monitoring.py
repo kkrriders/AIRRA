@@ -135,7 +135,12 @@ async def _escalation_check() -> dict:
         for incident in pending_incidents:
             window = ESCALATION_WINDOWS.get(incident.severity.value, _DEFAULT_ESCALATION_WINDOW)
             cutoff = now - timedelta(minutes=window)
-            if incident.updated_at > cutoff:
+            # LOW-6 fix: use pending_approval_at (set when analysis completes) instead of
+            # updated_at. updated_at resets on any field change (notes, metadata) which
+            # could push back escalation for a genuinely unaddressed incident.
+            # Fall back to updated_at for rows created before this column was added.
+            clock_start = incident.pending_approval_at or incident.updated_at
+            if clock_start > cutoff:
                 continue  # still within the SLA window for this severity
 
             incident.status = IncidentStatus.ESCALATED

@@ -195,9 +195,9 @@ class KubernetesPodRestartExecutor(ActionExecutor):
                     )
                     message = f"Restarted pod {pod_to_restart.metadata.name}"
 
-                # Wait for new pod to be ready
-                await asyncio.sleep(5)  # Give it time to start
-
+                # MED-5 fix: removed unconditional sleep(5). The PostActionVerifier's
+                # stabilization window handles "did it actually recover?" — sleeping
+                # here just delays the response without confirming pod readiness.
                 return self._create_result(
                     status=ExecutionStatus.SUCCESS,
                     message=message,

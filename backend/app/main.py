@@ -229,22 +229,28 @@ async def _manage_demo_incidents() -> None:
     try:
         runner = get_scenario_runner()
 
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+
+        # LOW-2 fix: split cleanup and lifecycle progression into separate context
+        # managers so each block has exactly one commit (from get_db_context exit).
+        # Intermediate db.commit() calls inside a single context were redundant and
+        # masked failures in the second phase by committing the first phase early.
+
+        # Step 1: Clean up old simulation incidents (older than 24 hours).
+        # I3 fix: clean both quick_incident_ui AND ai_generator sources so
+        # ai_generator incidents don't accumulate without bound.
+        # S3 fix: use result.rowcount instead of a pre-DELETE SELECT for counting.
         async with get_db_context() as db:
-            # Step 1: Clean up old simulation incidents (older than 24 hours).
-            # I3 fix: clean both quick_incident_ui AND ai_generator sources so
-            # ai_generator incidents don't accumulate without bound.
-            # S3 fix: use result.rowcount instead of a pre-DELETE SELECT for counting.
-            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
             delete_query = delete(Incident).where(
                 Incident.detection_source.in_(["quick_incident_ui", "ai_generator"]),
                 Incident.detected_at < cutoff_time
             )
             delete_result = await db.execute(delete_query)
             if delete_result.rowcount:  # type: ignore[attr-defined]
-                await db.commit()
                 logger.info(f"Cleaned up {delete_result.rowcount} old simulation incidents (>24h)")  # type: ignore[attr-defined]
 
-            # Step 2: Progress existing recent simulation incidents through lifecycle
+        # Step 2: Progress existing recent simulation incidents through lifecycle
+        async with get_db_context() as db:
             recent_sims_query = select(Incident).where(
                 Incident.detection_source == "quick_incident_ui",
                 Incident.detected_at >= cutoff_time,
@@ -277,7 +283,6 @@ async def _manage_demo_incidents() -> None:
                     incident.resolution_summary = "Demo: Simulated successful resolution"
                     logger.info(f"Resolved incident {incident.id} (execution complete)")
 
-            await db.commit()
             logger.info(f"Progressed {len(recent_incidents)} recent simulation incidents through lifecycle")
 
             # Step 3: Create new simulation incidents if needed (keep 3-5 active).

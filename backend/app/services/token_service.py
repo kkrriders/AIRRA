@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote, unquote
 from uuid import UUID
 
 from app.config import settings
@@ -129,6 +130,7 @@ class TokenService:
         notification_id: UUID,
         engineer_id: UUID,
         base_url: str = "http://localhost:3000",
+        expiry_hours: int = 4,
     ) -> tuple[str, datetime]:
         """
         Generate a secure URL for the admin panel with embedded token.
@@ -137,14 +139,20 @@ class TokenService:
             notification_id: The notification being acknowledged
             engineer_id: The engineer who should access
             base_url: Base URL of the frontend
+            expiry_hours: Token validity period — defaults to 4h to match
+                          notification_service usage (LOW-4 fix: was 1h, causing
+                          mismatched expiry between the URL and stored token).
 
         Returns:
             Tuple of (url, expiration_datetime)
         """
-        token, expires_at = self.generate_token(notification_id, engineer_id)
+        token, expires_at = self.generate_token(notification_id, engineer_id, expiry_hours=expiry_hours)
 
-        # Build URL with token as query parameter
-        url = f"{base_url}/admin/incident/{notification_id}?token={token}"
+        # URL-encode the token so characters like ':' and '=' in the HMAC payload
+        # don't confuse URL parsers or email clients (HIGH-3 fix).
+        # validate_token() receives the decoded value automatically via FastAPI/Starlette.
+        encoded_token = quote(token, safe="")
+        url = f"{base_url}/admin/incident/{notification_id}?token={encoded_token}"
 
         return url, expires_at
 

@@ -97,6 +97,12 @@ class Incident(Base, TimestampMixin):
         comment="Engineer currently assigned to resolve this incident",
     )
 
+    # Lifecycle timestamps
+    # Set when the incident first enters PENDING_APPROVAL — used as the escalation
+    # clock start so that unrelated field updates (metadata, notes) don't reset
+    # the SLA window (LOW-6 fix: was using updated_at which resets on any change).
+    pending_approval_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
     # Resolution tracking
     resolved_at: Mapped[datetime | None] = mapped_column(nullable=True)
     resolution_time_seconds: Mapped[int | None] = mapped_column(

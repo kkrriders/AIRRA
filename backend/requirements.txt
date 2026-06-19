@@ -21,3 +21,14 @@ aiofiles>=23.2.1
 sentence-transformers>=2.7.0
 pgvector>=0.3.0
 python-multipart>=0.0.6
+
+# JWT authentication
+PyJWT>=2.8.0
+bcrypt>=4.0.0
+
+# OpenTelemetry distributed tracing (optional — backend starts without these)
+opentelemetry-sdk>=1.23.0
+opentelemetry-instrumentation-fastapi>=0.44b0
+opentelemetry-exporter-otlp-proto-grpc>=1.23.0
+opentelemetry-instrumentation-sqlalchemy>=0.44b0
+opentelemetry-instrumentation-redis>=0.44b0

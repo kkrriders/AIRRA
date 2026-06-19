@@ -1,0 +1,47 @@
+{
+  "id": "traffic_spike_001",
+  "description": "Product service request rate surge from marketing campaign launch",
+  "service": "product-service",
+  "anomalies": [
+    {
+      "metric_name": "http_requests_per_second",
+      "is_anomaly": true,
+      "confidence": 0.85,
+      "current_value": 8500.0,
+      "expected_value": 400.0,
+      "deviation_sigma": 5.5,
+      "context": {"labels": {"service": "product-service"}}
+    },
+    {
+      "metric_name": "active_connections",
+      "is_anomaly": true,
+      "confidence": 0.80,
+      "current_value": 3200.0,
+      "expected_value": 150.0,
+      "deviation_sigma": 6.0,
+      "context": {"labels": {"service": "product-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Legitimate traffic surge from marketing campaign causing resource pressure",
+      "category": "traffic_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_requests_per_second", "observation": "Request rate at 8500 RPS vs normal 400 RPS — 21x increase", "relevance": 0.90},
+        {"signal_type": "metric", "signal_name": "active_connections", "observation": "Active connections at 3200 vs normal 150 — proportional to request surge", "relevance": 0.80}
+      ],
+      "reasoning": "The proportional increase in both request rate and active connections with no corresponding error rate increase is consistent with a genuine traffic surge rather than an attack or leak."
+    },
+    {
+      "description": "DDoS attack targeting product listing endpoints",
+      "category": "network_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_requests_per_second", "observation": "Sudden traffic spike could be adversarial", "relevance": 0.35}
+      ],
+      "reasoning": "Sudden traffic increase could be a DDoS attack rather than organic traffic."
+    }
+  ],
+  "expected_top_category": "traffic_spike",
+  "expected_confidence_min": 0.65,
+  "expected_confidence_max": 0.85
+}

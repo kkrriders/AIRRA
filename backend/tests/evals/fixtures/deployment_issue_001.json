@@ -1,0 +1,47 @@
+{
+  "id": "deployment_issue_001",
+  "description": "Auth service error rate spike immediately following v2.4.1 deployment",
+  "service": "auth-service",
+  "anomalies": [
+    {
+      "metric_name": "http_server_errors_rate",
+      "is_anomaly": true,
+      "confidence": 0.90,
+      "current_value": 38.0,
+      "expected_value": 0.5,
+      "deviation_sigma": 8.0,
+      "context": {"labels": {"service": "auth-service", "version": "v2.4.1"}}
+    },
+    {
+      "metric_name": "response_time_p99_ms",
+      "is_anomaly": true,
+      "confidence": 0.85,
+      "current_value": 3800.0,
+      "expected_value": 120.0,
+      "deviation_sigma": 5.0,
+      "context": {"labels": {"service": "auth-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Bad deployment v2.4.1 introduced regression in authentication token validation",
+      "category": "deployment_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_server_errors_rate", "observation": "Error rate jumped from 0.5/min to 38/min immediately after v2.4.1 deploy", "relevance": 0.88},
+        {"signal_type": "metric", "signal_name": "response_time_p99_ms", "observation": "P99 latency at 3.8s vs 120ms — new code path may have expensive validation", "relevance": 0.80}
+      ],
+      "reasoning": "The temporal correlation between deployment and symptom onset is the strongest indicator. Token validation changes in v2.4.1 could introduce both latency (expensive crypto) and errors (contract mismatch)."
+    },
+    {
+      "description": "Database schema migration conflict with new service version",
+      "category": "database_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "response_time_p99_ms", "observation": "Latency increase could indicate migration lock contention", "relevance": 0.40}
+      ],
+      "reasoning": "New deployments with schema migrations can cause table locks and latency."
+    }
+  ],
+  "expected_top_category": "deployment_issue",
+  "expected_confidence_min": 0.65,
+  "expected_confidence_max": 0.85
+}

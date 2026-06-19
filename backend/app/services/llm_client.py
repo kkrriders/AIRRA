@@ -79,6 +79,10 @@ T = TypeVar("T", bound=BaseModel)
 _CODE_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
 
 
+class BudgetExceededError(Exception):
+    """Raised when the daily token budget for a model is exhausted."""
+
+
 def _extract_first_json_object(text: str) -> str | None:
     """
     Extract the first complete JSON object from text using bracket counting.
@@ -245,6 +249,9 @@ class LLMClient(ABC):
                 _LLM_TOKENS.labels(provider=provider, model=self.model, token_type="completion").inc(cached.completion_tokens)
                 return cached
 
+        # Enforce daily token budget before making the API call
+        await self._check_daily_budget()
+
         # Generate fresh and measure wall-clock latency
         t0 = time.perf_counter()
         try:
@@ -261,7 +268,45 @@ class LLMClient(ABC):
         if should_cache:
             await llm_cache.set(cache_prompt_key, self.model, temp, response)
 
+        # Track daily token spend for budget circuit breaker
+        await self._track_daily_budget(response.total_tokens)
+
         return response
+
+    async def _check_daily_budget(self) -> None:
+        """Raise BudgetExceededError if the daily token budget is exhausted."""
+        budget = settings.daily_token_budget
+        if budget <= 0:
+            return
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        key = f"budget:daily:{self.model}:{today}"
+        try:
+            current = await get_redis().get(key)
+            if current and int(current) >= budget:
+                raise BudgetExceededError(
+                    f"Daily token budget ({budget:,}) exhausted for model '{self.model}'. "
+                    f"Used: {int(current):,}. Resets at midnight UTC."
+                )
+        except BudgetExceededError:
+            raise
+        except Exception as exc:
+            logger.warning("Budget check failed (non-fatal): %s", exc)
+
+    async def _track_daily_budget(self, tokens: int) -> None:
+        """Increment the daily token counter for this model in Redis."""
+        if settings.daily_token_budget <= 0:
+            return
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        key = f"budget:daily:{self.model}:{today}"
+        try:
+            pipe = get_redis().pipeline()
+            pipe.incrby(key, tokens)
+            pipe.expire(key, 86400)  # auto-expire after 24h
+            await pipe.execute()
+        except Exception as exc:
+            logger.warning("Budget tracking write failed (non-fatal): %s", exc)
 
     @abstractmethod
     async def generate_structured(

@@ -1,0 +1,47 @@
+{
+  "id": "latency_spike_001",
+  "description": "Recommendation service P95 latency spike from slow downstream ML inference",
+  "service": "recommendation-service",
+  "anomalies": [
+    {
+      "metric_name": "http_request_duration_p95_seconds",
+      "is_anomaly": true,
+      "confidence": 0.88,
+      "current_value": 4.2,
+      "expected_value": 0.3,
+      "deviation_sigma": 6.0,
+      "context": {"labels": {"service": "recommendation-service", "quantile": "0.95"}}
+    },
+    {
+      "metric_name": "downstream_call_latency_p95_seconds",
+      "is_anomaly": true,
+      "confidence": 0.82,
+      "current_value": 3.8,
+      "expected_value": 0.15,
+      "deviation_sigma": 4.5,
+      "context": {"labels": {"service": "recommendation-service", "downstream": "ml-inference"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "ML inference service degradation causing upstream latency in recommendation engine",
+      "category": "latency_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_request_duration_p95_seconds", "observation": "P95 latency at 4.2s vs normal 300ms — 14x increase", "relevance": 0.88},
+        {"signal_type": "metric", "signal_name": "downstream_call_latency_p95_seconds", "observation": "ML inference P95 at 3.8s vs 150ms — downstream is the bottleneck", "relevance": 0.75}
+      ],
+      "reasoning": "The downstream call latency closely mirrors the overall service latency, identifying the ML inference service as the root cause. The recommendation service itself appears healthy."
+    },
+    {
+      "description": "Application-level N+1 query pattern causing latency accumulation",
+      "category": "database_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_request_duration_p95_seconds", "observation": "High latency could be from N+1 database queries", "relevance": 0.35}
+      ],
+      "reasoning": "Slow database access patterns can manifest as high P95 latency."
+    }
+  ],
+  "expected_top_category": "latency_spike",
+  "expected_confidence_min": 0.55,
+  "expected_confidence_max": 0.80
+}

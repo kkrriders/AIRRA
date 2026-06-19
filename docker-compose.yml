@@ -13,6 +13,8 @@ x-backend-env: &backend-env
  
   AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
   AIRRA_SLACK_WEBHOOK_URL: ${AIRRA_SLACK_WEBHOOK_URL:-}
+  AIRRA_OTEL_ENABLED: ${AIRRA_OTEL_ENABLED:-false}
+  AIRRA_OTEL_ENDPOINT: http://jaeger:4317
 
 services:
   # PostgreSQL Database
@@ -195,6 +197,23 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+
+  # Jaeger — distributed tracing UI (enabled when AIRRA_OTEL_ENABLED=true)
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: airra-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver (backend → Jaeger)
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - tracing
 
   # Grafana — pre-provisioned with Prometheus datasource and AIRRA dashboard
   grafana:

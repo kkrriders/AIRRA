@@ -354,6 +354,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, None]:
     # Startup
     logger.info("Starting AIRRA Backend API", extra={"version": settings.app_version})
 
+    # OpenTelemetry distributed tracing (before any DB/Redis/LLM calls)
+    if settings.otel_enabled:
+        from app.core.telemetry import setup_telemetry
+        setup_telemetry(service_name="airra-backend", endpoint=settings.otel_endpoint)
+
     # Validate critical configuration
     if not settings.api_key.get_secret_value():
         error_msg = (
@@ -420,6 +425,11 @@ app = FastAPI(
 
 # Expose /metrics for Prometheus scraping (p50/p95 latency, request rate, error rate)
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
+# OpenTelemetry FastAPI instrumentation (no-op if OTel not enabled/installed)
+if settings.otel_enabled:
+    from app.core.telemetry import instrument_fastapi
+    instrument_fastapi(app)
 
 # Add security middleware (order matters - added first, executed last)
 # Security headers on all responses
@@ -506,7 +516,22 @@ from app.api.v1 import (  # noqa: E402
     quick_incident,
     simulator,
 )
-from app.api.v1.admin import engineers, reviews  # noqa: E402
+from app.api.v1.admin import engineers, reviews, usage  # noqa: E402
+from app.api.v1 import auth, stream  # noqa: E402
+
+# Auth routes (no API key required — they are the auth mechanism)
+app.include_router(
+    auth.router,
+    prefix=f"{settings.api_v1_prefix}/auth",
+    tags=["Authentication"],
+)
+
+# WebSocket streaming (no API key — authenticated via connect-time token in future)
+app.include_router(
+    stream.router,
+    prefix=f"{settings.api_v1_prefix}/incidents",
+    tags=["Streaming"],
+)
 
 app.include_router(
     incidents.router,
@@ -561,6 +586,13 @@ app.include_router(
     reviews.router,
     prefix=f"{settings.api_v1_prefix}/admin",
     tags=["Admin - Reviews"],
+    dependencies=[Depends(verify_api_key)],
+)
+
+app.include_router(
+    usage.router,
+    prefix=f"{settings.api_v1_prefix}/admin",
+    tags=["Admin - Usage"],
     dependencies=[Depends(verify_api_key)],
 )
 

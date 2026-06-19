@@ -1,0 +1,47 @@
+{
+  "id": "error_spike_001",
+  "description": "Notification service sudden 5xx error rate spike with log volume increase",
+  "service": "notification-service",
+  "anomalies": [
+    {
+      "metric_name": "http_server_requests_errors_total",
+      "is_anomaly": true,
+      "confidence": 0.93,
+      "current_value": 145.0,
+      "expected_value": 3.0,
+      "deviation_sigma": 8.0,
+      "context": {"labels": {"service": "notification-service", "status_code": "500"}}
+    },
+    {
+      "metric_name": "log_error_lines_per_minute",
+      "is_anomaly": true,
+      "confidence": 0.88,
+      "current_value": 280.0,
+      "expected_value": 5.0,
+      "deviation_sigma": 6.0,
+      "context": {"labels": {"service": "notification-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Unhandled exception in notification dispatch causing error spike",
+      "category": "error_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_server_requests_errors_total", "observation": "5xx error rate jumped from 3/min to 145/min — 48x increase", "relevance": 0.92},
+        {"signal_type": "metric", "signal_name": "log_error_lines_per_minute", "observation": "Error log volume at 280/min vs normal 5/min — unhandled exceptions being logged", "relevance": 0.85}
+      ],
+      "reasoning": "Simultaneous 5xx spike and error log explosion indicates an unhandled code path — likely a null reference or external API contract change in the dispatch layer."
+    },
+    {
+      "description": "External email/SMS provider rate limiting causing failures",
+      "category": "network_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_server_requests_errors_total", "observation": "Errors could be from external provider rejections", "relevance": 0.40}
+      ],
+      "reasoning": "External provider rate limits manifest as 5xx responses from the notification service."
+    }
+  ],
+  "expected_top_category": "error_spike",
+  "expected_confidence_min": 0.70,
+  "expected_confidence_max": 0.90
+}

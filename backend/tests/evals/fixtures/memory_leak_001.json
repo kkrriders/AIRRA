@@ -1,0 +1,47 @@
+{
+  "id": "memory_leak_001",
+  "description": "Payment service gradual heap growth with GC pressure",
+  "service": "payment-service",
+  "anomalies": [
+    {
+      "metric_name": "memory_usage_bytes",
+      "is_anomaly": true,
+      "confidence": 0.90,
+      "current_value": 7500000000.0,
+      "expected_value": 2000000000.0,
+      "deviation_sigma": 5.5,
+      "context": {"labels": {"service": "payment-service"}}
+    },
+    {
+      "metric_name": "gc_time_percent",
+      "is_anomaly": true,
+      "confidence": 0.85,
+      "current_value": 45.0,
+      "expected_value": 5.0,
+      "deviation_sigma": 8.0,
+      "context": {"labels": {"service": "payment-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Memory leak in cache layer causing gradual heap growth",
+      "category": "memory_leak",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "memory_usage_bytes", "observation": "Memory increased from 2GB to 7.5GB over 2 hours", "relevance": 0.95},
+        {"signal_type": "metric", "signal_name": "gc_time_percent", "observation": "GC time at 45% — heap pressure indicates unreleased objects", "relevance": 0.85}
+      ],
+      "reasoning": "Gradual linear memory increase paired with high GC time is the classic signature of an object reference leak."
+    },
+    {
+      "description": "Database connection pool exhaustion causing resource contention",
+      "category": "database_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "memory_usage_bytes", "observation": "High memory could indicate connection objects not being released", "relevance": 0.40}
+      ],
+      "reasoning": "Connection pool exhaustion could cause memory accumulation in pooled objects."
+    }
+  ],
+  "expected_top_category": "memory_leak",
+  "expected_confidence_min": 0.60,
+  "expected_confidence_max": 0.85
+}

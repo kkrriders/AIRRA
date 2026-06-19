@@ -14,6 +14,8 @@ from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 from sqlalchemy import select
 
+import json as _json
+
 from app.config import settings
 from app.core.decision.action_selector import ActionSelector
 from app.core.perception.anomaly_detector import AnomalyDetector, categorize_anomaly
@@ -32,6 +34,22 @@ from app.services.prometheus_client import get_prometheus_client
 from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
+
+
+async def _publish_incident_event(incident_id: str, event_type: str, data: dict) -> None:
+    """Publish incident state change to Redis pub/sub for WebSocket subscribers."""
+    from app.core.redis import get_redis
+    try:
+        payload = _json.dumps({
+            "type": event_type,
+            "incident_id": incident_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            **data,
+        })
+        await get_redis().publish(f"incident:{incident_id}:events", payload)
+    except Exception as exc:
+        # Publishing is best-effort — never fail the surrounding business logic.
+        logger.debug("Failed to publish incident event (non-fatal): %s", exc)
 
 
 def _compute_match_confidence(
@@ -438,6 +456,15 @@ async def _run_analysis(incident_id: str) -> dict:
                 f"{llm_response.total_tokens} tokens used"
             )
 
+            # Notify WebSocket subscribers that analysis is complete
+            top_cat = ranked_hypotheses[0][1].category if ranked_hypotheses else None
+            await _publish_incident_event(incident_id, "status_update", {
+                "status": "PENDING_APPROVAL",
+                "hypothesis_count": len(ranked_hypotheses),
+                "top_category": top_cat,
+                "tokens_used": llm_response.total_tokens,
+            })
+
             return {
                 "status": "success",
                 "hypotheses_generated": len(ranked_hypotheses),
@@ -448,6 +475,10 @@ async def _run_analysis(incident_id: str) -> dict:
         except Exception as e:
             logger.error(f"Analysis failed for incident {incident_id}: {e}", exc_info=True)
             incident.status = IncidentStatus.FAILED
+            await _publish_incident_event(incident_id, "status_update", {
+                "status": "FAILED",
+                "error": type(e).__name__,
+            })
             # Return (not raise) so get_db_context sees a clean exit and auto-commits
             # the FAILED status. Raising would trigger the rollback branch, discarding
             # the status update and permanently sticking the incident in ANALYZING.

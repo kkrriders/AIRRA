@@ -181,6 +181,51 @@ class Settings(BaseSettings):
         ),
     )
 
+    # JWT Authentication
+    jwt_secret_key: SecretStr = Field(  # type: ignore[assignment]
+        default="change-me-in-production-use-openssl-rand-hex-32",
+        description=(
+            "Secret key for signing JWT tokens. "
+            "Set AIRRA_JWT_SECRET_KEY to a strong random value in production: "
+            "openssl rand -hex 32"
+        ),
+    )
+    jwt_access_token_expire_minutes: int = Field(
+        default=15,
+        ge=1,
+        description="Access token lifetime in minutes (short-lived, default 15 min).",
+    )
+    jwt_refresh_token_expire_days: int = Field(
+        default=7,
+        ge=1,
+        description="Refresh token lifetime in days (default 7 days).",
+    )
+
+    # Cost Budget (token spend circuit breaker)
+    daily_token_budget: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Maximum tokens per model per day across all LLM calls. "
+            "0 = unlimited. Set AIRRA_DAILY_TOKEN_BUDGET to enforce a limit. "
+            "When the budget is hit, analysis tasks are rejected until midnight UTC."
+        ),
+    )
+
+    # OpenTelemetry / Distributed Tracing
+    otel_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable OpenTelemetry distributed tracing. "
+            "Set AIRRA_OTEL_ENABLED=true in docker-compose to activate. "
+            "Traces are exported via OTLP gRPC to AIRRA_OTEL_ENDPOINT."
+        ),
+    )
+    otel_endpoint: str = Field(
+        default="http://jaeger:4317",
+        description="OTLP gRPC endpoint for trace export (Jaeger or any OTLP collector).",
+    )
+
     # Rate Limiting
     rate_limit_trust_x_forwarded_for: bool = Field(
         default=False,

@@ -1,0 +1,47 @@
+{
+  "id": "cpu_spike_001",
+  "description": "API gateway sudden CPU spike with thread count explosion",
+  "service": "api-gateway",
+  "anomalies": [
+    {
+      "metric_name": "cpu_usage_percent",
+      "is_anomaly": true,
+      "confidence": 0.88,
+      "current_value": 98.0,
+      "expected_value": 45.0,
+      "deviation_sigma": 6.5,
+      "context": {"labels": {"service": "api-gateway"}}
+    },
+    {
+      "metric_name": "thread_count",
+      "is_anomaly": true,
+      "confidence": 0.75,
+      "current_value": 500.0,
+      "expected_value": 50.0,
+      "deviation_sigma": 9.0,
+      "context": {"labels": {"service": "api-gateway"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Runaway request handler loop causing CPU saturation and thread accumulation",
+      "category": "cpu_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "cpu_usage_percent", "observation": "CPU jumped from 45% to 98% — near saturation", "relevance": 0.92},
+        {"signal_type": "metric", "signal_name": "thread_count", "observation": "Thread count grew 10x from 50 to 500", "relevance": 0.80}
+      ],
+      "reasoning": "The simultaneous CPU spike and thread explosion indicates a request handling loop that is not yielding — threads are blocking on CPU-bound work."
+    },
+    {
+      "description": "Network routing issue causing request queuing",
+      "category": "network_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "thread_count", "observation": "High thread count could indicate threads waiting on network I/O", "relevance": 0.35}
+      ],
+      "reasoning": "Network issues at the gateway could cause request pileup and thread accumulation."
+    }
+  ],
+  "expected_top_category": "cpu_spike",
+  "expected_confidence_min": 0.60,
+  "expected_confidence_max": 0.85
+}

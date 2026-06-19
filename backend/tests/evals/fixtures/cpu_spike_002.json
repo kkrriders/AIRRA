@@ -1,0 +1,37 @@
+{
+  "id": "cpu_spike_002",
+  "description": "Worker service CPU throttling indicating overprovisioning or busy loop",
+  "service": "worker-service",
+  "anomalies": [
+    {
+      "metric_name": "container_cpu_cfs_throttled_seconds_total",
+      "is_anomaly": true,
+      "confidence": 0.80,
+      "current_value": 42.0,
+      "expected_value": 2.0,
+      "deviation_sigma": 7.0,
+      "context": {"labels": {"service": "worker-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "CPU-intensive task queue processing causing container throttling",
+      "category": "cpu_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "container_cpu_cfs_throttled_seconds_total", "observation": "CPU throttled time jumped from 2s to 42s — hitting cgroup CPU limit", "relevance": 0.85}
+      ],
+      "reasoning": "CFS throttling at 21x baseline means the container is consistently hitting its CPU quota. Worker tasks are CPU-bound."
+    },
+    {
+      "description": "Memory pressure causing CPU overhead in garbage collection",
+      "category": "memory_leak",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "container_cpu_cfs_throttled_seconds_total", "observation": "GC overhead could appear as CPU throttling", "relevance": 0.30}
+      ],
+      "reasoning": "Memory leaks can cause GC to consume CPU, leading to throttling."
+    }
+  ],
+  "expected_top_category": "cpu_spike",
+  "expected_confidence_min": 0.55,
+  "expected_confidence_max": 0.82
+}

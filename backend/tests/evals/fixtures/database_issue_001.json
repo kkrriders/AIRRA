@@ -1,0 +1,47 @@
+{
+  "id": "database_issue_001",
+  "description": "User service PostgreSQL connection pool exhaustion with query latency spike",
+  "service": "user-service",
+  "anomalies": [
+    {
+      "metric_name": "pg_stat_activity_count",
+      "is_anomaly": true,
+      "confidence": 0.82,
+      "current_value": 98.0,
+      "expected_value": 12.0,
+      "deviation_sigma": 4.8,
+      "context": {"labels": {"service": "user-service"}}
+    },
+    {
+      "metric_name": "db_query_latency_p99_seconds",
+      "is_anomaly": true,
+      "confidence": 0.88,
+      "current_value": 8.5,
+      "expected_value": 0.05,
+      "deviation_sigma": 7.5,
+      "context": {"labels": {"service": "user-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "PostgreSQL connection pool exhaustion causing query queue buildup and latency",
+      "category": "database_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "pg_stat_activity_count", "observation": "Active DB connections at 98 vs normal 12 — pool near max_connections", "relevance": 0.90},
+        {"signal_type": "metric", "signal_name": "db_query_latency_p99_seconds", "observation": "P99 query latency at 8.5s vs normal 50ms — queries queuing for connections", "relevance": 0.85}
+      ],
+      "reasoning": "Connection count at max combined with severe latency increase is the definitive signature of connection pool exhaustion — new queries queue waiting for a free connection."
+    },
+    {
+      "description": "Application traffic spike overloading database",
+      "category": "traffic_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "pg_stat_activity_count", "observation": "High connection count could be from increased request volume", "relevance": 0.40}
+      ],
+      "reasoning": "Sudden traffic increase could drive more database connections."
+    }
+  ],
+  "expected_top_category": "database_issue",
+  "expected_confidence_min": 0.55,
+  "expected_confidence_max": 0.80
+}

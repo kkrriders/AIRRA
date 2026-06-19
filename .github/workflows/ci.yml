@@ -56,6 +56,14 @@ jobs:
           AIRRA_LLM_PROVIDER: groq
           AIRRA_GROQ_API_KEY: ci-placeholder-key
 
+      - name: Run eval harness (confidence scoring)
+        run: python -m tests.evals.score --min-accuracy 0.80
+        env:
+          AIRRA_API_KEY: ci-test-key-12345
+          AIRRA_ENVIRONMENT: development
+          AIRRA_DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+          AIRRA_REDIS_URL: redis://localhost:6379/0
+
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
         if: always()

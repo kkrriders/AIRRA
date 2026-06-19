@@ -1,0 +1,47 @@
+{
+  "id": "network_issue_001",
+  "description": "Checkout service extreme latency and timeout rate spike indicating network partition",
+  "service": "checkout-service",
+  "anomalies": [
+    {
+      "metric_name": "http_request_duration_seconds",
+      "is_anomaly": true,
+      "confidence": 0.92,
+      "current_value": 5.0,
+      "expected_value": 0.2,
+      "deviation_sigma": 12.0,
+      "context": {"labels": {"service": "checkout-service", "quantile": "0.95"}}
+    },
+    {
+      "metric_name": "upstream_timeout_rate",
+      "is_anomaly": true,
+      "confidence": 0.87,
+      "current_value": 25.0,
+      "expected_value": 0.1,
+      "deviation_sigma": 10.0,
+      "context": {"labels": {"service": "checkout-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Network partition between checkout service and upstream payment gateway",
+      "category": "network_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "http_request_duration_seconds", "observation": "P95 latency at 5s vs normal 200ms — requests hitting timeout threshold", "relevance": 0.90},
+        {"signal_type": "metric", "signal_name": "upstream_timeout_rate", "observation": "Timeout rate at 25% vs normal 0.1% — upstream unreachable", "relevance": 0.85}
+      ],
+      "reasoning": "High latency combined with timeout spikes across all upstream calls indicates a network-layer issue, not application logic."
+    },
+    {
+      "description": "Downstream dependency overloaded causing cascading latency",
+      "category": "database_issue",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "upstream_timeout_rate", "observation": "Timeouts could be from DB queries exceeding statement timeout", "relevance": 0.40}
+      ],
+      "reasoning": "Slow database queries could manifest as latency and timeouts."
+    }
+  ],
+  "expected_top_category": "network_issue",
+  "expected_confidence_min": 0.55,
+  "expected_confidence_max": 0.80
+}

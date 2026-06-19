@@ -1,0 +1,47 @@
+{
+  "id": "memory_leak_002",
+  "description": "Inventory service gradual RSS growth with open file descriptor accumulation",
+  "service": "inventory-service",
+  "anomalies": [
+    {
+      "metric_name": "process_resident_memory_bytes",
+      "is_anomaly": true,
+      "confidence": 0.85,
+      "current_value": 4200000000.0,
+      "expected_value": 800000000.0,
+      "deviation_sigma": 4.5,
+      "context": {"labels": {"service": "inventory-service"}}
+    },
+    {
+      "metric_name": "process_open_fds",
+      "is_anomaly": true,
+      "confidence": 0.78,
+      "current_value": 9800.0,
+      "expected_value": 120.0,
+      "deviation_sigma": 5.0,
+      "context": {"labels": {"service": "inventory-service"}}
+    }
+  ],
+  "mocked_llm_hypotheses": [
+    {
+      "description": "Memory leak via unclosed file handles causing RSS and FD accumulation",
+      "category": "memory_leak",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "process_resident_memory_bytes", "observation": "RSS grew from 800MB to 4.2GB without restart", "relevance": 0.90},
+        {"signal_type": "metric", "signal_name": "process_open_fds", "observation": "Open FDs grew from 120 to 9800 — strong indicator of handle leak", "relevance": 0.75}
+      ],
+      "reasoning": "Co-occurring RSS growth and FD count growth strongly suggests a resource leak where file handles and their associated buffers are not being closed."
+    },
+    {
+      "description": "Traffic spike causing temporary resource pressure",
+      "category": "traffic_spike",
+      "evidence": [
+        {"signal_type": "metric", "signal_name": "process_open_fds", "observation": "High FDs could indicate many concurrent request handlers", "relevance": 0.35}
+      ],
+      "reasoning": "High traffic could briefly increase both memory and open connections."
+    }
+  ],
+  "expected_top_category": "memory_leak",
+  "expected_confidence_min": 0.55,
+  "expected_confidence_max": 0.80
+}

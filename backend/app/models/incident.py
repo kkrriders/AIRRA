@@ -139,6 +139,11 @@ class Incident(Base, TimestampMixin):
         comment="RAG trust: 1.0=human-validated, 0.7=approved, 0.4=auto, 0.2=ai_generated",
     )
 
+    # Cross-incident correlation — shared UUID assigned when this incident is grouped
+    # with others affecting services that share a common upstream dependency.
+    # Set by CorrelationService after creation; NULL means no group detected yet.
+    correlation_group_id: Mapped[UUID | None] = mapped_column(nullable=True, index=True)
+
     # Flexible metadata storage
     metrics_snapshot: Mapped[dict] = mapped_column(
         JSON,
@@ -216,4 +221,5 @@ class Incident(Base, TimestampMixin):
             "resolution_time_seconds": self.resolution_time_seconds,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "correlation_group_id": str(self.correlation_group_id) if self.correlation_group_id else None,
         }

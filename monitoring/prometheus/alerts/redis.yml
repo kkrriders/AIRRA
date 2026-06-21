@@ -1,0 +1,39 @@
+groups:
+  - name: redis
+    interval: 30s
+    rules:
+      # Fire when Redis has used > 80 % of its maxmemory limit.
+      # If maxmemory is 0 (unlimited), this alert never fires — intentional,
+      # because unlimited Redis will OOM the host rather than reject writes.
+      # Set maxmemory in redis.conf to enable this alert.
+      - alert: RedisMemoryHigh
+        expr: >
+          redis_memory_used_bytes
+          / redis_config_maxmemory_bytes
+          > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory above 80 % (instance {{ $labels.instance }})"
+          description: >
+            Redis is using {{ $value | humanizePercentage }} of its configured maxmemory.
+            Current: {{ with query "redis_memory_used_bytes" }}{{ . | first | value | humanize1024 }}B{{ end }}.
+            If this reaches 100 %, Redis will begin evicting keys (or rejecting writes depending on
+            the eviction policy), which will break the Celery broker, rate-limiter, and dedup state.
+            Consider increasing maxmemory, evicting cold keys, or splitting broker/cache responsibilities.
+
+      # Fire when Redis has been down for > 1 minute.
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is down (instance {{ $labels.instance }})"
+          description: >
+            Redis has been unreachable for > 1 minute.
+            Impact: Celery broker offline (no task scheduling), rate-limiting degraded to
+            in-process fallback, WebSocket pub/sub unavailable.

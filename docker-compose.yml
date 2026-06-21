@@ -49,6 +49,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis Exporter — exposes redis_memory_used_bytes, redis_up, etc. to Prometheus
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0-alpine
+    container_name: airra-redis-exporter
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Prometheus for metrics collection
   prometheus:
     image: prom/prometheus:latest
@@ -57,6 +70,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'

@@ -59,21 +59,23 @@ Primary project: **AIRRA** | Secondary project: **MockPrep**
 
 ### Medium (nice to have)
 
-- [ ] **Fix Redis SPOF**
-  - Option A: Add Redis Sentinel config to `docker-compose.yml` (3 replicas)
-  - Option B: Split responsibilities — dedicated Redis for Celery broker, separate for cache/rate-limit
-  - Minimum: add a Grafana alert when Redis memory > 80%
+- [x] **Add Redis observability (SPOF monitoring)** *(done 2026-06-20)*
+  - `redis-exporter` (oliver006/redis_exporter:v1.62.0-alpine) added to docker-compose — exposes `redis_memory_used_bytes`, `redis_up`, etc.
+  - `monitoring/prometheus/alerts/redis.yml` — `RedisMemoryHigh` (>80% maxmemory, warning) + `RedisDown` (>1 min down, critical)
+  - `monitoring/prometheus/prometheus.yml` — `rule_files` enabled; `redis` scrape job added; alerts dir mounted
+  - **Known remaining SPOF**: single Redis instance is still broker + cache + rate-limiter. Next step = split into `redis-broker` (Celery) + `redis-cache` (rate-limit/dedup/pub-sub). Not done — Sentinel on a single host is theater; split-responsibility is the real fix and requires config refactor.
 
-- [ ] **Add cross-incident correlation**
-  - When 3+ incidents appear within 5 minutes across services with shared upstreams, group them
-  - Add `correlation_group_id` UUID column to `incidents` table
-  - Surface in frontend as "related incidents" panel
-  - Why: shared DB outage creating 3 separate LLM analyses wastes quota and confuses operators
+- [x] **Add cross-incident correlation** *(done 2026-06-20)*
+  - `backend/app/services/correlation_service.py` — groups incidents sharing a common upstream dependency
+  - `backend/alembic/versions/012_add_correlation_group_id.py` — UUID column + index on `incidents`
+  - Wired into `anomaly_monitor._create_incident` (best-effort, never blocks incident creation)
+  - `GET /api/v1/incidents/?correlation_group_id=<uuid>` — returns all incidents in a blast-radius group
+  - `correlation_group_id` surfaced in `IncidentResponse` schema and `Incident.to_dict()`
+  - Threshold: 3+ incidents within 5-minute window sharing any upstream; joins existing group if one exists
 
-- [ ] **Update CLAUDE.md file structure section**
-  - Current CLAUDE.md file tree does not match actual directory structure
-  - Actual structure has `core/decision/`, `core/execution/`, `core/perception/`, `core/reasoning/`
-  - CLAUDE.md shows a simpler tree — update it to match reality
+- [x] **Update CLAUDE.md file structure section** *(done 2026-06-21)*
+  - Added `correlation_service.py` to services tree
+  - `core/` subdirectory structure (perception/reasoning/decision/execution/simulation) was already correct
 
 ---
 

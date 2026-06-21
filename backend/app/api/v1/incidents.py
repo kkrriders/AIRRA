@@ -105,6 +105,7 @@ async def list_incidents(
         pattern=r"^[a-zA-Z0-9_-]+$",
     ),
     assigned_engineer_id: UUID | None = Query(None, description="Filter by assigned engineer"),
+    correlation_group_id: UUID | None = Query(None, description="Filter by correlation group (returns all incidents in a blast-radius group)"),
     search: str | None = Query(
         None,
         description="Text search in title and description",
@@ -123,6 +124,7 @@ async def list_incidents(
     - severity: Incident severity (critical, high, medium, low)
     - service: Affected service name
     - assigned_engineer_id: Filter by assigned engineer
+    - correlation_group_id: Return all incidents in a blast-radius group
     - search: Text search in title and description (case-insensitive)
     - start_date/end_date: Date range filter
     """
@@ -145,6 +147,8 @@ async def list_incidents(
         stmt = stmt.where(Incident.affected_service == service)
     if assigned_engineer_id:
         stmt = stmt.where(Incident.assigned_engineer_id == assigned_engineer_id)
+    if correlation_group_id:
+        stmt = stmt.where(Incident.correlation_group_id == correlation_group_id)
     if search:
         # Escape SQL wildcard characters to prevent pattern injection
         escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

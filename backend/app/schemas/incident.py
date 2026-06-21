@@ -71,6 +71,7 @@ class IncidentResponse(IncidentBase):
     context: dict
     created_at: datetime
     updated_at: datetime
+    correlation_group_id: UUID | None = None
 
 
 class IncidentWithRelations(IncidentResponse):

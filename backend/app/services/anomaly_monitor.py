@@ -287,7 +287,20 @@ class AnomalyMonitor:
                     f"(severity: {severity.value}, anomalies: {len(anomalies)})"
                 )
 
-                # Stage 6: Generate embedding asynchronously so future vector search
+                # Cross-incident correlation — group with other recent incidents
+                # that share an upstream dependency (best-effort).
+                try:
+                    from app.services.correlation_service import get_correlation_service
+                    group_id = await get_correlation_service().correlate(incident, db)
+                    if group_id:
+                        await db.commit()
+                        logger.info(
+                            f"Incident {incident.id} assigned correlation group {group_id}"
+                        )
+                except Exception as corr_exc:
+                    logger.warning(f"Correlation check failed for {incident.id}: {corr_exc}")
+
+                # Generate embedding asynchronously so future vector search
                 # can retrieve this incident as a past case.
                 from app.worker.tasks.embedding import embed_incident_task
                 embed_incident_task.delay(str(incident.id))

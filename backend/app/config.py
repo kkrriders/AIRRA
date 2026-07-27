@@ -58,8 +58,13 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://airra:airra@localhost:5432/airra",
         description="PostgreSQL connection string"
     )
-    database_pool_size: int = Field(default=10, ge=1, le=50)
-    database_max_overflow: int = Field(default=20, ge=0, le=100)
+    # ponytail: pool_size+max_overflow is PER PROCESS. backend, celery-worker,
+    # celery-analysis, and celery-beat each open their own engine, so worst case
+    # is 4 * (pool_size + max_overflow) connections against Postgres. Defaults
+    # below cap that at 60, safely under Postgres's default max_connections=100.
+    # Raise via AIRRA_DATABASE_POOL_SIZE if you add more worker processes.
+    database_pool_size: int = Field(default=5, ge=1, le=50)
+    database_max_overflow: int = Field(default=10, ge=0, le=100)
     database_echo: bool = Field(default=False, description="Log SQL queries")
 
     # Redis
@@ -209,6 +214,24 @@ class Settings(BaseSettings):
             "Maximum tokens per model per day across all LLM calls. "
             "0 = unlimited. Set AIRRA_DAILY_TOKEN_BUDGET to enforce a limit. "
             "When the budget is hit, analysis tasks are rejected until midnight UTC."
+        ),
+    )
+
+    # Data Retention (append-only tables) — 0 = keep forever (default)
+    # audit_log is compliance-sensitive; leave at 0 unless a retention policy requires it.
+    notification_retention_days: int = Field(
+        default=0, ge=0,
+        description="Auto-delete notifications older than N days. 0 = disabled.",
+    )
+    incident_event_retention_days: int = Field(
+        default=0, ge=0,
+        description="Auto-delete incident timeline events older than N days. 0 = disabled.",
+    )
+    audit_log_retention_days: int = Field(
+        default=0, ge=0,
+        description=(
+            "Auto-delete audit log entries older than N days. 0 = disabled. "
+            "Compliance-sensitive — confirm your retention policy before setting this."
         ),
     )
 

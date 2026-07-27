@@ -16,6 +16,7 @@ from app.config import settings
 ANOMALY_CHECK_INTERVAL_SECONDS: float = 60.0       # every minute
 AI_GENERATOR_INTERVAL_SECONDS: float = 30 * 60.0   # every 30 minutes (free-tier safe)
 ESCALATION_CHECK_INTERVAL_SECONDS: float = 10 * 60.0  # every 10 minutes
+RETENTION_CLEANUP_INTERVAL_SECONDS: float = 24 * 60 * 60.0  # once a day
 
 celery_app = Celery(
     "airra",
@@ -58,6 +59,10 @@ celery_app.conf.update(
         "escalation-check": {
             "task": "app.worker.tasks.monitoring.run_escalation_check",
             "schedule": ESCALATION_CHECK_INTERVAL_SECONDS,
+        },
+        "retention-cleanup": {
+            "task": "app.worker.tasks.monitoring.run_retention_cleanup",
+            "schedule": RETENTION_CLEANUP_INTERVAL_SECONDS,
         },
     },
 )

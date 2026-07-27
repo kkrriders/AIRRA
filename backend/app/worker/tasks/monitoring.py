@@ -58,6 +58,23 @@ def run_ai_generator() -> dict:
         return {"status": "error", "error": type(e).__name__}
 
 
+@celery_app.task(name="app.worker.tasks.monitoring.run_retention_cleanup")
+def run_retention_cleanup() -> dict:
+    """
+    Delete rows past their configured retention window from append-only tables.
+
+    Beat calls this once a day. Each table's window is independently configured
+    (AIRRA_NOTIFICATION_RETENTION_DAYS / AIRRA_INCIDENT_EVENT_RETENTION_DAYS /
+    AIRRA_AUDIT_LOG_RETENTION_DAYS) and defaults to 0 (disabled) — this is a
+    no-op until an operator opts in.
+    """
+    try:
+        return asyncio.run(_retention_cleanup())
+    except Exception as e:
+        logger.error(f"Retention cleanup task failed: {e}", exc_info=True)
+        return {"status": "error", "error": type(e).__name__}
+
+
 @celery_app.task(name="app.worker.tasks.monitoring.run_escalation_check")
 def run_escalation_check() -> dict:
     """
@@ -72,6 +89,38 @@ def run_escalation_check() -> dict:
     except Exception as e:
         logger.error(f"Escalation check task failed: {e}", exc_info=True)
         return {"status": "error", "error": type(e).__name__}
+
+
+async def _retention_cleanup() -> dict:
+    """Delete rows older than each configured retention window, table by table."""
+    from sqlalchemy import delete
+
+    from app.config import settings
+    from app.database import get_db_context
+    from app.models.audit_log import AgentAuditLog
+    from app.models.incident_event import IncidentEvent
+    from app.models.notification import Notification
+
+    windows = (
+        (Notification, settings.notification_retention_days),
+        (IncidentEvent, settings.incident_event_retention_days),
+        (AgentAuditLog, settings.audit_log_retention_days),
+    )
+    now = datetime.now(timezone.utc)
+    deleted: dict[str, int] = {}
+
+    async with get_db_context() as db:
+        for model, retention_days in windows:
+            if retention_days <= 0:
+                continue  # disabled for this table
+            cutoff = now - timedelta(days=retention_days)
+            result = await db.execute(delete(model).where(model.created_at < cutoff))
+            deleted[model.__tablename__] = result.rowcount
+        await db.commit()
+
+    if deleted:
+        logger.info(f"Retention cleanup deleted rows: {deleted}")
+    return {"status": "ok", "deleted": deleted}
 
 
 async def _anomaly_check() -> dict:

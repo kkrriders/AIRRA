@@ -42,6 +42,40 @@ def embed_incident_task(incident_id: str, extra_context: dict | None = None) -> 
         raise embed_incident_task.retry(exc=exc)
 
 
+@celery_app.task(name="backfill_missing_embeddings")
+def backfill_missing_embeddings_task(batch_size: int = 200) -> dict:
+    """
+    Queue embed_incident_task for every incident with a NULL embedding.
+
+    On-demand only — not on the Beat schedule. Run manually after changing the
+    embedding model, or after bulk-importing incidents that bypassed the normal
+    create/resolve flow:
+
+        celery -A app.worker.celery_app call backfill_missing_embeddings
+
+    ponytail: no dedicated backfill logic — just finds the gaps and re-uses the
+    existing per-incident embed_incident_task for each one.
+    """
+    try:
+        return asyncio.run(_backfill_missing(batch_size))
+    except Exception as exc:
+        logger.error(f"backfill_missing_embeddings_task failed: {exc}", exc_info=True)
+        return {"status": "error", "error": type(exc).__name__}
+
+
+async def _backfill_missing(batch_size: int) -> dict:
+    async with get_db_context() as db:
+        stmt = select(Incident.id).where(Incident.embedding.is_(None)).limit(batch_size)
+        result = await db.execute(stmt)
+        missing_ids = [str(row[0]) for row in result.all()]
+
+    for incident_id in missing_ids:
+        embed_incident_task.delay(incident_id)
+
+    logger.info(f"Queued embedding backfill for {len(missing_ids)} incident(s)")
+    return {"status": "ok", "queued": len(missing_ids)}
+
+
 async def _embed(incident_id: str, extra_context: dict | None) -> dict:
     """Async core: load incident → summarize → embed → persist."""
     from app.services.embedding_service import get_embedding_service

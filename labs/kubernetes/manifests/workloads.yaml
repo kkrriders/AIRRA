@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airra-lab
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-config
+  namespace: airra-lab
+data:
+  DATABASE_URL: postgresql://lab:lab@postgres:5432/lab
+  REDIS_URL: redis://redis:6379/0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-service
+  namespace: airra-lab
+spec:
+  replicas: 2
+  selector: {matchLabels: {service: api-service}}
+  template:
+    metadata:
+      labels: {service: api-service}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "8080", prometheus.io/path: "/metrics"}
+    spec:
+      containers:
+        - name: api-service
+          image: airra-lab-service:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - {name: SERVICE_NAME, value: api-service}
+          envFrom: [{configMapRef: {name: lab-config}}]
+          ports: [{containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: api-service, namespace: airra-lab}
+spec: {selector: {service: api-service}, ports: [{port: 8080, targetPort: 8080}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: order-service, namespace: airra-lab}
+spec:
+  replicas: 2
+  selector: {matchLabels: {service: order-service}}
+  template:
+    metadata:
+      labels: {service: order-service}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "8080", prometheus.io/path: "/metrics"}
+    spec:
+      containers:
+        - name: order-service
+          image: airra-lab-service:local
+          imagePullPolicy: IfNotPresent
+          env: [{name: SERVICE_NAME, value: order-service}]
+          envFrom: [{configMapRef: {name: lab-config}}]
+          ports: [{containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: order-service, namespace: airra-lab}
+spec: {selector: {service: order-service}, ports: [{port: 8080, targetPort: 8080}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: payment-service, namespace: airra-lab}
+spec:
+  replicas: 2
+  selector: {matchLabels: {service: payment-service}}
+  template:
+    metadata:
+      labels: {service: payment-service}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "8080", prometheus.io/path: "/metrics"}
+    spec:
+      containers:
+        - name: payment-service
+          image: airra-lab-service:local
+          imagePullPolicy: IfNotPresent
+          env: [{name: SERVICE_NAME, value: payment-service}]
+          envFrom: [{configMapRef: {name: lab-config}}]
+          ports: [{containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 3}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: payment-service, namespace: airra-lab}
+spec: {selector: {service: payment-service}, ports: [{port: 8080, targetPort: 8080}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: postgres, namespace: airra-lab}
+spec:
+  replicas: 1
+  selector: {matchLabels: {service: postgres}}
+  template:
+    metadata: {labels: {service: postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env: [{name: POSTGRES_USER, value: lab}, {name: POSTGRES_PASSWORD, value: lab}, {name: POSTGRES_DB, value: lab}]
+          ports: [{containerPort: 5432}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: postgres, namespace: airra-lab}
+spec: {selector: {service: postgres}, ports: [{port: 5432, targetPort: 5432}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: redis, namespace: airra-lab}
+spec:
+  replicas: 1
+  selector: {matchLabels: {service: redis}}
+  template:
+    metadata: {labels: {service: redis}}
+    spec: {containers: [{name: redis, image: redis:7-alpine, ports: [{containerPort: 6379}]}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: airra-lab}
+spec: {selector: {service: redis}, ports: [{port: 6379, targetPort: 6379}]}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: load-generator, namespace: airra-lab}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: load-generator}}
+  template:
+    metadata: {labels: {app: load-generator}}
+    spec:
+      containers:
+        - name: load-generator
+          image: curlimages/curl:8.8.0
+          command: [sh, -c, 'while true; do curl -fsS http://api-service:8080/checkout >/dev/null || true; sleep 0.2; done']

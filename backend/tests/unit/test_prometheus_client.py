@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from app.services.prometheus_client import MetricDataPoint, MetricResult, PrometheusClient
+from app.config import settings
 
 
 class TestPrometheusClient:
@@ -80,6 +81,33 @@ class TestPrometheusClient:
 
             assert "cpu_usage" in metrics or "request_rate" in metrics or metrics is not None
             mock_query.assert_called()
+
+    def test_kubernetes_profile_queries_real_workload_metrics(self, monkeypatch):
+        """The cluster profile must never fall back to AIRRA's demo gauges."""
+        monkeypatch.setattr(settings, "prometheus_metric_profile", "kubernetes")
+        monkeypatch.setattr(settings, "kubernetes_namespace", "airra-lab")
+        queries = PrometheusClient._queries_for_profile("payment-service")
+
+        assert "pod_restart_count" in queries
+        assert "kube_pod_container_status_restarts_total" in queries["pod_restart_count"]
+        assert "http_requests_total" in queries["error_rate"]
+        assert "airra_demo" not in " ".join(queries.values())
+
+    async def test_aggregate_query_keeps_logical_metric_name(self, monkeypatch):
+        monkeypatch.setattr(settings, "prometheus_metric_profile", "kubernetes")
+        with patch.object(
+            PrometheusClient,
+            "query_range",
+            side_effect=lambda *_args, **_kwargs: [
+                MetricResult(metric_name="unknown", labels={}, values=[])
+            ],
+        ):
+            metrics = await PrometheusClient("http://localhost:9090").get_service_metrics(
+                "payment-service"
+            )
+
+        assert metrics["error_rate"][0].metric_name == "error_rate"
+        assert metrics["pod_restart_count"][0].metric_name == "pod_restart_count"
 
     async def test_handles_connection_error(self):
         """Test handling of connection errors."""

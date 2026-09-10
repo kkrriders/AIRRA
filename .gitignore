@@ -69,10 +69,10 @@ dmypy.json
 *.sqlite3
 *.sqlite
 
-# Environment variables
+# Environment variables (all .env* except the committed template)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Docker
 .dockerignore
@@ -89,6 +89,14 @@ Thumbs.db
 backend/alembic/versions/*.py
 !backend/alembic/versions/__init__.py
 CLAUDE.md
+
+# Docs and markdown — only README.md files are tracked
+docs/
+*.md
+!README.md
+
+# Eval run outputs (the dataset corpus is committed; per-run reports are not)
+backend/tests/evals/dataset/report.json
 
 # Secrets
 *.pem

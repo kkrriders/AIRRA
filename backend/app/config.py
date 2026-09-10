@@ -112,6 +112,20 @@ class Settings(BaseSettings):
         ge=10,
         description="Metric scrape interval in seconds"
     )
+    prometheus_metric_profile: Literal["demo", "kubernetes"] = Field(
+        default="demo",
+        description=(
+            "PromQL metric profile. Use 'demo' only for the synthetic portfolio "
+            "simulator; use 'kubernetes' for the local incident lab or a real "
+            "instrumented Kubernetes workload."
+        ),
+    )
+    kubernetes_namespace: str = Field(
+        default="airra-lab",
+        min_length=1,
+        max_length=63,
+        description="Namespace used by the Kubernetes Prometheus metric profile.",
+    )
 
     # Monitored Services
     monitored_services: list[str] = Field(
@@ -137,6 +151,26 @@ class Settings(BaseSettings):
         ge=1.0,
         le=5.0,
         description="Standard deviation threshold for anomaly detection"
+    )
+    anomaly_methods: str = Field(
+        default="zscore,ewma,mad",
+        description="Comma-separated detection methods to run in the ensemble "
+        "(subset of: zscore, ewma, mad)",
+    )
+    anomaly_min_votes: int = Field(
+        default=2,
+        ge=1,
+        le=3,
+        description="Minimum number of methods that must agree before a point "
+        "is flagged (ensemble vote). A single method can still flag alone if its "
+        "score is extreme.",
+    )
+    anomaly_ewma_alpha: float = Field(
+        default=0.3,
+        gt=0.0,
+        le=1.0,
+        description="EWMA smoothing factor. Lower = smoother, slower to react, "
+        "better at surfacing gradual drift.",
     )
     confidence_threshold_high: float = Field(
         default=0.8,

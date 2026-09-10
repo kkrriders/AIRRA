@@ -192,26 +192,64 @@ class PrometheusClient:
         end = datetime.now(timezone.utc)
         start = end - timedelta(minutes=lookback_minutes)
 
-        # Query the demo Gauge metrics exposed at /demo/metrics.
-        # These are scraped by the 'airra-demo-services' Prometheus job (15 s interval).
-        # Gauge queries work directly with query_range — no rate() wrapper needed.
-        queries = {
-            "request_rate": f'airra_demo_request_rate{{service="{service_name}"}}',
-            "error_rate":   f'airra_demo_error_rate{{service="{service_name}"}}',
-            "latency_p95":  f'airra_demo_latency_p95{{service="{service_name}"}}',
-            "cpu_usage":    f'airra_demo_cpu_usage{{service="{service_name}"}}',
-            "memory_usage": f'airra_demo_memory_bytes{{service="{service_name}"}}',
-        }
+        queries = self._queries_for_profile(service_name)
 
         results = {}
         for name, query in queries.items():
             try:
                 results[name] = await self.query_range(query, start, end)
+                # Aggregating PromQL (sum/rate/histogram_quantile) removes the
+                # __name__ label. Preserve the logical metric name so anomaly
+                # categorisation and incident explanations remain meaningful.
+                for metric in results[name]:
+                    if metric.metric_name == "unknown":
+                        metric.metric_name = name
             except Exception as e:
                 logger.error(f"Failed to query {name}: {str(e)}")
                 results[name] = []
 
         return results
+
+    @staticmethod
+    def _queries_for_profile(service_name: str) -> dict[str, str]:
+        """Return PromQL appropriate for the configured telemetry source.
+
+        The 'demo' profile queries the synthetic Gauge metrics exposed at
+        /demo/metrics (scraped by the 'airra-demo-services' job, 15 s interval);
+        Gauges work directly with query_range, no rate() wrapper. The
+        'kubernetes' profile queries real instrumented-workload metrics and
+        never touches the demo gauges.
+        """
+        if settings.prometheus_metric_profile == "demo":
+            return {
+                "request_rate": f'airra_demo_request_rate{{service="{service_name}"}}',
+                "error_rate": f'airra_demo_error_rate{{service="{service_name}"}}',
+                "latency_p95": f'airra_demo_latency_p95{{service="{service_name}"}}',
+                "cpu_usage": f'airra_demo_cpu_usage{{service="{service_name}"}}',
+                "memory_usage": f'airra_demo_memory_bytes{{service="{service_name}"}}',
+            }
+
+        namespace = settings.kubernetes_namespace
+        selector = f'service="{service_name}",namespace="{namespace}"'
+        pod_matcher = f'namespace="{namespace}",pod=~"{service_name}-.*"'
+        request_total = f'http_requests_total{{{selector}}}'
+        return {
+            "request_rate": f"sum(rate({request_total}[1m]))",
+            "error_rate": (
+                f"sum(rate(http_requests_total{{{selector},status=~\"5..\"}}[1m])) "
+                f"/ clamp_min(sum(rate({request_total}[1m])), 0.001)"
+            ),
+            "latency_p95": (
+                "histogram_quantile(0.95, sum by (le) "
+                f"(rate(http_request_duration_seconds_bucket{{{selector}}}[1m])))"
+            ),
+            "cpu_usage": f"sum(rate(process_cpu_seconds_total{{{selector}}}[1m]))",
+            "memory_usage": f"sum(process_resident_memory_bytes{{{selector}}})",
+            "pod_restart_count": (
+                "sum(kube_pod_container_status_restarts_total"
+                f"{{{pod_matcher},container=\"{service_name}\"}})"
+            ),
+        }
 
 
 _prometheus_client: PrometheusClient | None = None

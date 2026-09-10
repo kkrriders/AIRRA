@@ -13,6 +13,21 @@
 
 ---
 
+## Demo boundary and evidence
+
+The default Docker Compose experience uses **synthetic demo metrics**. It is a
+portfolio simulator, not equivalent to observing a production cluster. The
+separate [Kubernetes incident lab](labs/kubernetes/README.md) runs API, order,
+payment, Redis, PostgreSQL, Prometheus, and kube-state-metrics locally so AIRRA
+can observe real CrashLoopBackOff, database latency, and Redis-outage signals.
+
+The following reproducible checks are intentionally separate from product
+claims (run them from `backend/`):
+
+- `python -m tests.evals.benchmark` evaluates the 240-case synthetic incident corpus.
+- `python -m tests.evals.learning_experiment` compares cold and feedback-warmed diagnosis ranks on a held-out split.
+- `python -m tests.evals.security_benchmark` runs 100 curated malicious prompt, secret, and unsafe-action cases.
+
 ## The Problem
 
 Production incidents are expensive. The median time-to-detect is 60 minutes; median time-to-resolve is 4 hours. The bottleneck is rarely hardware — it's the cognitive load on the SRE: parse dashboards, correlate signals, form a hypothesis, find the right runbook, decide whether to act.
@@ -73,7 +88,7 @@ Three deeper problems make this worse:
 | # | Stage | Implementation | Status |
 |---|-------|---------------|--------|
 | 1 | **Prometheus Monitoring** | `anomaly_monitor.py` polls `/api/v1/query_range` | ✅ |
-| 2 | **Anomaly Detection** | 3σ Z-score per metric, configurable window | ✅ |
+| 2 | **Anomaly Detection** | Z-score + EWMA-drift + MAD ensemble; configurable quorum | ✅ |
 | 3 | **Severity + Blast Radius** | `blast_radius.py`, sigma-weighted scoring | ✅ |
 | 4 | **Incident Summarization** | `IncidentSummarizer` — structured text from metrics_snapshot (no LLM) | ✅ |
 | 5 | **Knowledge Base** | PostgreSQL: incidents, hypotheses, actions, postmortems, patterns | ✅ |
@@ -160,7 +175,7 @@ On first startup AIRRA automatically:
 ```
 1. Celery Beat runs anomaly_check every 60s
    └─ AnomalyMonitor queries Prometheus for each configured service
-   └─ Z-score > 3σ → creates Incident (DETECTED)
+   └─ Ensemble (z-score / EWMA-drift / MAD) reaches quorum → creates Incident (DETECTED)
    └─ Triggers embed_incident_task.delay(incident_id)
 
 2. EmbeddingService (in Celery worker)
@@ -341,7 +356,9 @@ If an anomaly fires 1 second after the Beat just ran, the system won't detect it
 
 **Production path to sub-10-second detection**: Prometheus already evaluates alerting rules every 15 seconds (`evaluation_interval: 15s` in `prometheus.yml` — already configured). Wiring **Prometheus Alertmanager → AIRRA webhook endpoint** would push anomalies immediately on rule evaluation, bypassing the 60-second Beat cycle entirely. The Z-score logic would move into Prometheus recording rules; AIRRA receives a structured alert payload and skips directly to analysis.
 
-**Baseline window caveat**: The Z-score uses a 5-minute lookback window (`lookback_minutes=5` in `anomaly_monitor.py`) producing ~20 data points at 15s steps. This catches sudden spikes well but **will not detect gradual drift** — a slow memory leak over 30 minutes will shift the baseline along with the metric and may never cross 3σ.
+**Baseline window caveat**: Detection uses a 5-minute lookback window (`lookback_minutes=5` in `anomaly_monitor.py`) producing ~20 data points at 15s steps. The EWMA-drift member of the ensemble is what covers the slow-memory-leak case that a lone z-score misses (the baseline shifting along with the metric); a longer, sustained ramp than the 5-minute window holds can still evade all three.
+
+**Precision/recall trade**: The ensemble requires a quorum of methods (`AIRRA_ANOMALY_MIN_VOTES`, default 2) or one method past 1.5× threshold. This is deliberately tuned for precision over recall — on the synthetic 240-case corpus (`python -m tests.evals.benchmark`) it scores ~0.99 precision / ~0.72 recall. Lower `AIRRA_ANOMALY_MIN_VOTES` to `1` to trade the other way.
 
 ### Single Celery Beat
 Redis-backed Beat state is shared, but `celery-beat` must run as a single replica. Multiple Beat instances would fire duplicate tasks. Enforce this constraint manually in production.
@@ -418,7 +435,12 @@ All settings use the `AIRRA_` env prefix.
 | `AIRRA_DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL DSN |
 | `AIRRA_REDIS_URL` | `redis://localhost:6379/0` | Redis DSN |
 | `AIRRA_DRY_RUN_MODE` | `true` | Prevent real action execution |
-| `AIRRA_ANOMALY_THRESHOLD_SIGMA` | `3.0` | Z-score threshold for anomaly detection |
+| `AIRRA_ANOMALY_THRESHOLD_SIGMA` | `3.0` | Sigma-equivalent threshold each ensemble method scores against |
+| `AIRRA_ANOMALY_METHODS` | `zscore,ewma,mad` | Ensemble members to run (subset of `zscore`, `ewma`, `mad`) |
+| `AIRRA_ANOMALY_MIN_VOTES` | `2` | Methods that must agree before a point is flagged (1 = OR, higher = stricter) |
+| `AIRRA_ANOMALY_EWMA_ALPHA` | `0.3` | EWMA smoothing factor; lower = smoother, slower to react to drift |
+| `AIRRA_PROMETHEUS_METRIC_PROFILE` | `demo` | `demo` (synthetic gauges) or `kubernetes` (real workload PromQL) |
+| `AIRRA_KUBERNETES_NAMESPACE` | `airra-lab` | Namespace used by the `kubernetes` metric profile |
 | `AIRRA_CONFIDENCE_THRESHOLD_HIGH` | `0.8` | High confidence → auto-propose action |
 | `AIRRA_SIMILARITY_SKIP_THRESHOLD` | `0.75` | Composite score (0–1) above which LLM is skipped; lower = more LLM calls |
 | `AIRRA_VERIFICATION_STABILIZATION_SECONDS` | `30` | Wait time before re-checking metrics after an action executes (use 120+ in production) |

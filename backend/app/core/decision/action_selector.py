@@ -183,6 +183,7 @@ class ActionSelector:
             "traffic_drop": (ActionType.SCALE_DOWN, RiskLevel.LOW, "low"),
             "latency_spike": (ActionType.RESTART_POD, RiskLevel.MEDIUM, "medium"),
             "error_spike": (ActionType.ROLLBACK_DEPLOYMENT, RiskLevel.HIGH, "high"),
+            "deployment_issue": (ActionType.ROLLBACK_DEPLOYMENT, RiskLevel.HIGH, "high"),
             "database_issue": (ActionType.RESTART_POD, RiskLevel.HIGH, "high"),
             "network_issue": (ActionType.RESTART_POD, RiskLevel.HIGH, "high"),
         }

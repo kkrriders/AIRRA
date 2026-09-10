@@ -1,19 +1,52 @@
 """
-Anomaly detection using statistical methods.
+Anomaly detection using an ensemble of statistical methods.
 
-Senior Engineering Note:
-- Z-score based detection (simple but effective for MVP)
-- Can be extended with ML-based detection (Prophet, Isolation Forest, etc.)
-- Returns confidence scores for detected anomalies
+Why an ensemble instead of a single z-score:
+- **Z-score** reacts fast to sudden spikes but is fragile: a single outlier in
+  the baseline inflates the stdev, and a slow drift moves the mean with it so
+  the spike is never >Nσ.
+- **EWMA drift** (exponentially weighted moving average) tracks the *trend* of
+  the series. A gradual ramp accumulates in the smoothed statistic and crosses
+  the control limit even when no individual point is a 3σ jump.
+- **MAD** (median absolute deviation) is a robust z-score. The median and MAD
+  ignore a handful of historical outliers, so a real anomaly is still visible
+  when a prior spike has polluted the baseline window.
+
+Each method votes. A point is an anomaly when `min_votes` methods agree, or when
+any single method's score is extreme (unambiguous spike). This keeps recall high
+without the false-positive rate of an OR of three independent tests.
+
+No ML model here on purpose — robust statistics + correlation + RAG reasoning is
+a better engineering story than a black-box detector nobody can debug at 3am.
 """
 import logging
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import NamedTuple
 
+from app.config import settings
 from app.services.prometheus_client import MetricResult
 
 logger = logging.getLogger(__name__)
+
+# A method that clears (this * threshold_sigma) is trusted to flag on its own.
+# Between 1x and 1.5x threshold a second method must agree (min_votes); past
+# 1.5x the signal is unambiguous enough to stand alone. This is what lets a
+# single method cover the others' blind spots (EWMA for drift, MAD for a
+# baseline polluted by an old spike) instead of being out-voted.
+STRONG_SINGLE_METHOD_SIGMA_MULTIPLIER = 1.5
+
+# MAD -> stdev scale factor for a normal distribution (so MAD scores are
+# comparable to z-scores).
+_MAD_TO_SIGMA = 0.6745
+
+# EWMA drift: relative movement -> sigma-equivalent. ~20% sustained drift reads
+# as ~3 sigma. Heuristic — re-tune against the eval fixtures once they exist.
+_EWMA_DRIFT_SCALE = 15.0
+# Fraction of total EWMA movement that must be net-directional for it to count
+# as drift rather than a spike-and-recover.
+_EWMA_DIRECTION_RATIO = 0.6
 
 
 @dataclass
@@ -28,29 +61,160 @@ class AnomalyDetection:
     deviation_sigma: float
     timestamp: datetime
     context: dict
+    methods_triggered: list[str] = field(default_factory=list)
+
+
+class _MethodResult(NamedTuple):
+    """Per-method verdict for a single point."""
+
+    name: str
+    is_anomaly: bool
+    score: float  # deviation in sigma-equivalent units (>= 0)
+    detail: dict
+
+
+def _relative_deviation_sigma(current: float, reference: float) -> float:
+    """
+    Fallback "sigma-equivalent" score when there is no usable spread estimate
+    (stdev or MAD is zero). Scale-free: divide the gap by the larger magnitude
+    so the score stays bounded regardless of sign or units, then ×10 so a 30%
+    jump reads as ~3 sigma.
+    """
+    if current == reference:
+        return 0.0
+    base = max(abs(reference), abs(current), 1.0)
+    return (abs(current - reference) / base) * 10.0
+
+
+def _ewma_series(values: list[float], alpha: float) -> list[float]:
+    """Exponentially weighted moving average, seeded with the first value."""
+    smoothed = values[0]
+    out = [smoothed]
+    for v in values[1:]:
+        smoothed = alpha * v + (1 - alpha) * smoothed
+        out.append(smoothed)
+    return out
+
+
+def _zscore_method(baseline: list[float], current: float, threshold: float) -> _MethodResult:
+    mean = statistics.mean(baseline)
+    try:
+        stdev = statistics.stdev(baseline)
+    except statistics.StatisticsError:
+        stdev = 0.0
+
+    if stdev == 0:
+        score = _relative_deviation_sigma(current, mean)
+    else:
+        score = abs(current - mean) / stdev
+
+    return _MethodResult(
+        name="zscore",
+        is_anomaly=score > threshold,
+        score=score,
+        detail={"mean": mean, "stdev": stdev},
+    )
+
+
+def _ewma_method(
+    all_values: list[float], threshold: float, alpha: float
+) -> _MethodResult:
+    """
+    Flag sustained directional drift — the failure mode z-score and MAD both
+    miss, because a slow ramp drags the mean/median along with it.
+
+    We smooth the series, then check two things:
+      1. net travel (start -> end of the smoothed line) as a fraction of the
+         starting level, scaled to sigma-equivalent units;
+      2. that the movement is mostly one-directional, not a spike that recovered
+         (which MAD/z already handle).
+    Mean-reverting noise nets out near zero on both counts.
+    """
+    series = _ewma_series(all_values, alpha)
+    net = series[-1] - series[0]
+    total_variation = sum(
+        abs(series[i] - series[i - 1]) for i in range(1, len(series))
+    )
+    directional = total_variation > 0 and abs(net) / total_variation >= _EWMA_DIRECTION_RATIO
+
+    if directional:
+        base = max(abs(series[0]), 1.0)
+        score = (abs(net) / base) * _EWMA_DRIFT_SCALE
+    else:
+        score = 0.0
+
+    return _MethodResult(
+        name="ewma",
+        is_anomaly=score > threshold,
+        score=score,
+        detail={
+            "ewma_current": series[-1],
+            "ewma_start": series[0],
+            "drift": net,
+            "directional": directional,
+        },
+    )
+
+
+def _mad_method(baseline: list[float], current: float, threshold: float) -> _MethodResult:
+    median = statistics.median(baseline)
+    mad = statistics.median([abs(x - median) for x in baseline])
+
+    if mad == 0:
+        score = _relative_deviation_sigma(current, median)
+    else:
+        score = _MAD_TO_SIGMA * abs(current - median) / mad
+
+    return _MethodResult(
+        name="mad",
+        is_anomaly=score > threshold,
+        score=score,
+        detail={"median": median, "mad": mad},
+    )
 
 
 class AnomalyDetector:
     """
-    Statistical anomaly detector for time series metrics.
+    Ensemble statistical anomaly detector for time-series metrics.
 
-    Uses z-score (standard deviation) based detection.
-    This is a simple but effective approach for MVP.
-
-    For production, consider:
-    - ML-based detection (Prophet, ARIMA, Isolation Forest)
-    - Seasonal decomposition
-    - Multi-variate analysis
+    Runs z-score, EWMA-drift and MAD detection over the metric window and
+    combines their votes. Defaults come from settings so sensitivity can be
+    tuned without a code change.
     """
 
-    def __init__(self, threshold_sigma: float = 3.0):
-        """
-        Initialize anomaly detector.
+    _ALL_METHODS = ("zscore", "ewma", "mad")
 
-        Args:
-            threshold_sigma: Number of standard deviations for anomaly threshold
-        """
-        self.threshold_sigma = threshold_sigma
+    def __init__(
+        self,
+        threshold_sigma: float | None = None,
+        methods: list[str] | tuple[str, ...] | None = None,
+        min_votes: int | None = None,
+        ewma_alpha: float | None = None,
+    ):
+        self.threshold_sigma = (
+            threshold_sigma
+            if threshold_sigma is not None
+            else settings.anomaly_threshold_sigma
+        )
+        if methods is None:
+            methods = [
+                m.strip()
+                for m in settings.anomaly_methods.split(",")
+                if m.strip() in self._ALL_METHODS
+            ]
+        # Empty / all-invalid -> fall back to the full ensemble rather than
+        # silently disabling detection.
+        valid = [m for m in methods if m in self._ALL_METHODS]
+        self.methods = tuple(valid) or self._ALL_METHODS
+        self.min_votes = (
+            min_votes if min_votes is not None else settings.anomaly_min_votes
+        )
+        self.ewma_alpha = (
+            ewma_alpha if ewma_alpha is not None else settings.anomaly_ewma_alpha
+        )
+        self.strong_single_sigma = (
+            self.threshold_sigma * STRONG_SINGLE_METHOD_SIGMA_MULTIPLIER
+        )
 
     def detect(
         self,
@@ -58,67 +222,55 @@ class AnomalyDetector:
         window_size: int | None = None,
     ) -> list[AnomalyDetection]:
         """
-        Detect anomalies in metric data.
+        Detect an anomaly on the most recent point of a metric window.
 
-        Args:
-            metric_result: Metric data from Prometheus
-            window_size: Number of recent points to use for baseline
-                        (None = use all points)
-
-        Returns:
-            List of anomaly detections (one per anomalous point)
+        Returns a single-element list when the ensemble flags the point,
+        otherwise an empty list (keeps the original contract).
         """
         if not metric_result.values:
             return []
 
-        anomalies = []
-
-        # Use all points except the last one for baseline
         all_values = [dp.value for dp in metric_result.values]
-
         if len(all_values) < 3:
             logger.warning(f"Insufficient data points for {metric_result.metric_name}")
             return []
 
-        # Calculate baseline statistics
-        baseline_values = all_values[:-1] if len(all_values) > 1 else all_values
-        mean = statistics.mean(baseline_values)
-
-        # Handle case where all values are the same
-        try:
-            stdev = statistics.stdev(baseline_values)
-        except statistics.StatisticsError:
-            stdev = 0.0
-
-        # Check the most recent point
+        baseline_values = all_values[:-1]
         current_point = metric_result.values[-1]
         current_value = current_point.value
 
-        # Calculate z-score
-        if stdev == 0:
-            # If no variance, calculate relative deviation from mean.
-            # Use the larger of abs(mean) and abs(current_value) as the
-            # normalization base so the score stays bounded regardless of
-            # sign or scale, with a floor of 1.0 to avoid division by zero.
-            if current_value == mean:
-                z_score = 0.0
-            else:
-                normalization_base = max(abs(mean), abs(current_value), 1.0)
-                z_score = (abs(current_value - mean) / normalization_base) * 10.0
-        else:
-            z_score = abs(current_value - mean) / stdev
+        results: list[_MethodResult] = []
+        for method in self.methods:
+            if method == "zscore":
+                results.append(
+                    _zscore_method(baseline_values, current_value, self.threshold_sigma)
+                )
+            elif method == "ewma":
+                results.append(
+                    _ewma_method(all_values, self.threshold_sigma, self.ewma_alpha)
+                )
+            elif method == "mad":
+                results.append(
+                    _mad_method(baseline_values, current_value, self.threshold_sigma)
+                )
 
-        is_anomaly = z_score > self.threshold_sigma
+        votes = [r for r in results if r.is_anomaly]
+        max_score = max((r.score for r in results), default=0.0)
+        strong_single = any(r.score >= self.strong_single_sigma for r in results)
+        is_anomaly = len(votes) >= self.min_votes or strong_single
 
-        # Calculate confidence based on how far beyond threshold
+        mean = statistics.mean(baseline_values)
+
         if is_anomaly:
-            # Confidence scales with z-score beyond threshold
-            # Caps at 0.99 to avoid overconfidence
-            excess_sigma = z_score - self.threshold_sigma
-            confidence = min(0.99, 0.5 + (excess_sigma / 10.0))
+            # Confidence rises with agreement (how many methods voted) and with
+            # how far past threshold the strongest method reached.
+            agreement = len(votes) / max(len(results), 1)
+            excess = max(0.0, max_score - self.threshold_sigma)
+            confidence = min(0.99, 0.4 * agreement + 0.6 * min(1.0, 0.5 + excess / 10.0))
         else:
-            # Low confidence when below threshold
-            confidence = max(0.0, z_score / self.threshold_sigma) * 0.4
+            confidence = max(0.0, max_score / self.threshold_sigma) * 0.4
+
+        methods_triggered = [r.name for r in votes]
 
         anomaly = AnomalyDetection(
             metric_name=metric_result.metric_name,
@@ -126,59 +278,52 @@ class AnomalyDetector:
             confidence=confidence,
             current_value=current_value,
             expected_value=mean,
-            deviation_sigma=z_score,
+            deviation_sigma=max_score,
             timestamp=datetime.fromtimestamp(current_point.timestamp),
             context={
                 "labels": metric_result.labels,
                 "baseline_mean": mean,
-                "baseline_stdev": stdev,
                 "threshold_sigma": self.threshold_sigma,
                 "sample_size": len(baseline_values),
+                "votes": len(votes),
+                "min_votes": self.min_votes,
+                "strong_single": strong_single,
+                "methods": {r.name: {"score": r.score, **r.detail} for r in results},
             },
+            methods_triggered=methods_triggered,
         )
 
         if is_anomaly:
-            anomalies.append(anomaly)
             logger.info(
                 f"Anomaly detected in {metric_result.metric_name}: "
                 f"value={current_value:.2f}, expected={mean:.2f}, "
-                f"sigma={z_score:.2f}, confidence={confidence:.2f}"
+                f"max_sigma={max_score:.2f}, votes={methods_triggered}, "
+                f"confidence={confidence:.2f}"
             )
+            return [anomaly]
 
-        return anomalies
+        return []
 
     def detect_multiple(
         self,
         metric_results: list[MetricResult],
     ) -> list[AnomalyDetection]:
-        """
-        Detect anomalies across multiple metrics.
-
-        Returns all detected anomalies sorted by confidence.
-        """
-        all_anomalies = []
-
+        """Detect anomalies across multiple metrics, sorted by confidence."""
+        all_anomalies: list[AnomalyDetection] = []
         for metric_result in metric_results:
-            anomalies = self.detect(metric_result)
-            all_anomalies.extend(anomalies)
-
-        # Sort by confidence (highest first)
+            all_anomalies.extend(self.detect(metric_result))
         all_anomalies.sort(key=lambda x: x.confidence, reverse=True)
-
         return all_anomalies
 
 
 def categorize_anomaly(anomaly: AnomalyDetection) -> str:
     """
-    Categorize anomaly based on metric name and characteristics.
+    Categorize anomaly based on metric name and direction.
 
-    Senior Engineering Note:
-    This is a simple heuristic categorization.
-    In production, you'd use pattern matching or ML classification.
+    Simple heuristic — in production this would be pattern matching or an ML
+    classifier.
     """
     metric_name = anomaly.metric_name.lower()
-
-    # Check if value is increasing or decreasing
     increasing = anomaly.current_value > anomaly.expected_value
 
     if "error" in metric_name or "failure" in metric_name:

@@ -78,6 +78,20 @@ class TestActionSelector:
         assert action.risk_level == RiskLevel.HIGH
         assert "rollback" in action.description.lower()
 
+    def test_selects_rollback_for_deployment_issue(self):
+        hypothesis = HypothesisItem(
+            description="Pods crash after config rollout",
+            category="deployment_issue",
+            confidence_score=0.88,
+            evidence=[],
+            reasoning="CrashLoopBackOff began at deployment time",
+        )
+        action = ActionSelector().select(hypothesis, service_name="checkout-service")
+
+        assert action is not None
+        assert action.action_type == ActionType.ROLLBACK_DEPLOYMENT
+        assert action.requires_approval is True
+
     def test_selects_restart_for_database_issue(self, database_issue_hypothesis):
         """
         Test that database issue hypothesis triggers pod restart.

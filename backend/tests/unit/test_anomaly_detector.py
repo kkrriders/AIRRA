@@ -7,7 +7,7 @@ Senior Engineering Note:
 - Mocks external dependencies
 - Covers edge cases
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -174,6 +174,98 @@ class TestAnomalyDetector:
             assert all_anomalies[0].confidence >= all_anomalies[1].confidence
 
 
+class TestEnsembleDetection:
+    """Tests for the multi-strategy (z-score + EWMA + MAD) ensemble."""
+
+    @staticmethod
+    def _metric(values: list[float], name: str = "cpu_usage") -> MetricResult:
+        return MetricResult(
+            metric_name=name,
+            labels={"service": "test-service"},
+            values=[
+                MetricDataPoint(timestamp=float(i), value=v)
+                for i, v in enumerate(values)
+            ],
+        )
+
+    def test_gradual_drift_evades_zscore_but_ensemble_catches_it(self):
+        """
+        A slow ramp: the rolling mean moves with the metric, so the final point
+        is only ~2 sigma above baseline and pure z-score misses it. EWMA drift
+        accumulates and the ensemble flags it.
+        """
+        # 30 points ramping 100 -> 158 (~2/step), mild noise.
+        ramp = [100.0 + i * 2.0 + (1.5 if i % 2 else -1.5) for i in range(30)]
+        metric = self._metric(ramp)
+
+        zscore_only = AnomalyDetector(threshold_sigma=3.0, methods=["zscore"])
+        assert zscore_only.detect(metric) == [], "z-score alone should miss the drift"
+
+        ensemble = AnomalyDetector(threshold_sigma=3.0)
+        anomalies = ensemble.detect(metric)
+        assert len(anomalies) == 1
+        assert "ewma" in anomalies[0].methods_triggered
+
+    def test_mad_survives_polluted_baseline(self):
+        """
+        One historical spike inflates stdev enough that a second, real anomaly
+        is < 3 sigma by z-score. MAD ignores the outlier and still flags it.
+        """
+        values = [50.0] * 25
+        values[5] = 400.0  # old spike pollutes the baseline stdev
+        values.append(140.0)  # genuine anomaly on the latest point
+        metric = self._metric(values)
+
+        zscore_only = AnomalyDetector(threshold_sigma=3.0, methods=["zscore"])
+        assert zscore_only.detect(metric) == []
+
+        ensemble = AnomalyDetector(threshold_sigma=3.0)
+        anomalies = ensemble.detect(metric)
+        assert len(anomalies) == 1
+        assert "mad" in anomalies[0].methods_triggered
+
+    def test_single_weak_vote_is_suppressed_by_quorum(self):
+        """One lone, non-extreme method firing is suppressed when min_votes=2."""
+        # Tight baseline (stdev ~0.31); last point ~3.9 sigma up. Only z-score
+        # reacts, and 3.9 sigma is below the strong-single cutoff (4.5).
+        values = [100.0 + (0.3 if i % 2 else -0.3) for i in range(20)]
+        values.append(101.2)
+        metric = self._metric(values)
+
+        # min_votes=1: the single z-score vote is enough to flag.
+        lone = AnomalyDetector(threshold_sigma=3.0, min_votes=1).detect(metric)
+        assert len(lone) == 1
+        assert lone[0].methods_triggered == ["zscore"]
+
+        # min_votes=2: that same lone vote is now suppressed.
+        assert AnomalyDetector(threshold_sigma=3.0, min_votes=2).detect(metric) == []
+
+    def test_extreme_single_method_flags_alone(self):
+        """An unambiguous 10x spike triggers even if only one method's model holds."""
+        values = [50.0] * 20 + [500.0]
+        metric = self._metric(values)
+
+        detector = AnomalyDetector(threshold_sigma=3.0, min_votes=3)
+        anomalies = detector.detect(metric)
+        assert len(anomalies) == 1
+        assert anomalies[0].context["strong_single"] is True
+
+    def test_methods_recorded_in_context(self):
+        values = [50.0] * 20 + [250.0]
+        metric = self._metric(values)
+        anomaly = AnomalyDetector(threshold_sigma=3.0).detect(metric)[0]
+
+        assert set(anomaly.context["methods"]) == {"zscore", "ewma", "mad"}
+        assert anomaly.context["votes"] == len(anomaly.methods_triggered)
+
+    def test_method_subset_is_honoured(self):
+        detector = AnomalyDetector(methods=["zscore", "mad"])
+        assert detector.methods == ("zscore", "mad")
+        values = [50.0] * 20 + [250.0]
+        anomaly = detector.detect(self._metric(values))[0]
+        assert set(anomaly.context["methods"]) == {"zscore", "mad"}
+
+
 class TestCategorizeAnomaly:
     """Test suite for anomaly categorization."""
 
@@ -186,7 +278,7 @@ class TestCategorizeAnomaly:
             current_value=100.0,
             expected_value=10.0,
             deviation_sigma=5.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={},
         )
 
@@ -202,7 +294,7 @@ class TestCategorizeAnomaly:
             current_value=2.0,
             expected_value=0.2,
             deviation_sigma=4.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={},
         )
 
@@ -218,7 +310,7 @@ class TestCategorizeAnomaly:
             current_value=1000000000.0,
             expected_value=500000000.0,
             deviation_sigma=3.5,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={},
         )
 
@@ -234,7 +326,7 @@ class TestCategorizeAnomaly:
             current_value=95.0,
             expected_value=40.0,
             deviation_sigma=3.0,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             context={},
         )
 

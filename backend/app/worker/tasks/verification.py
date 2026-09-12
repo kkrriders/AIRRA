@@ -18,7 +18,6 @@ Rollback policy:
     - NO_CHANGE + dry_run        → expected (action didn't touch real infra)
     - SUCCESS                    → no further action (incident already RESOLVED)
 """
-import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -42,6 +41,7 @@ from app.models.audit_log import AuditEventType
 from app.models.incident import Incident, IncidentStatus
 from app.services.audit_service import write_audit_log
 from app.services.prometheus_client import get_prometheus_client
+from app.worker.async_run import run_async
 from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -65,7 +65,7 @@ def verify_action_task(self: Task, action_id: str, incident_id: str) -> dict:
     stabilization window then compares before/after Prometheus metrics.
     """
     try:
-        return asyncio.run(_run_verification(action_id, incident_id))
+        return run_async(_run_verification(action_id, incident_id))
     except Exception as exc:
         logger.error(
             f"Verification task failed for action {action_id}: {exc}",

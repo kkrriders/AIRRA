@@ -8,6 +8,14 @@ global:
 rule_files:
   - "alerts/*.yml"
 
+# Push firing alerts to Alertmanager, which forwards them to AIRRA's webhook
+# (see alertmanager.yml + backend/app/api/v1/webhooks.py). This is the
+# push-based detection path that bypasses AIRRA's 15s Beat poll entirely.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
 # Scrape configurations
 scrape_configs:
   # Prometheus self-monitoring
@@ -18,7 +26,7 @@ scrape_configs:
   # AIRRA Backend API metrics
   - job_name: 'airra-backend'
     static_configs:
-      - targets: ['backend:8000']
+      - targets: ['airra-backend:8000']
     metrics_path: '/metrics'
 
   # Redis metrics via redis_exporter (docker-compose service: redis-exporter)
@@ -33,6 +41,17 @@ scrape_configs:
   # Each service spikes one metric for 45 s every 10 min so anomaly detection fires.
   - job_name: 'airra-demo-services'
     static_configs:
-      - targets: ['backend:8000']
+      - targets: ['airra-backend:8000']
     metrics_path: '/demo/metrics'
+    scrape_interval: 15s
+
+  # AI Engineering Platform — real instrumented workload AIRRA monitors end-to-end.
+  # Reachable only when that stack is up and joined to the `airra-mesh` network
+  # (see docs/superpowers/specs/2026-09-10-airra-ai-platform-integration-design.md).
+  # Target shows DOWN when the platform stack is not running — harmless.
+  # Consumed by the 'kubernetes' metric profile (AIRRA_PROMETHEUS_METRIC_PROFILE).
+  - job_name: 'ai-platform'
+    static_configs:
+      - targets: ['ai-backend:8000']
+    metrics_path: '/metrics/'   # trailing slash: make_asgi_app mount 307-redirects /metrics
     scrape_interval: 15s

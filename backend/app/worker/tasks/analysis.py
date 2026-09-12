@@ -31,6 +31,7 @@ from app.services.dependency_graph import get_dependency_graph
 from app.services.embedding_service import get_embedding_service
 from app.services.llm_client import get_llm_client
 from app.services.prometheus_client import get_prometheus_client
+from app.worker.async_run import run_async
 from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -116,7 +117,7 @@ def analyze_incident(self: Task, incident_id: str) -> dict:
     so each task creates its own event loop for async SQLAlchemy + httpx calls.
     """
     try:
-        return asyncio.run(_run_analysis(incident_id))
+        return run_async(_run_analysis(incident_id))
     except SoftTimeLimitExceeded:
         logger.error(f"Analysis task soft time limit exceeded for {incident_id}")
         try:

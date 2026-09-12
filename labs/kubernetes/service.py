@@ -8,7 +8,7 @@ import os
 import sys
 import time
 
-import psycopg
+import psycopg  # pyright: ignore[reportMissingImports]  # lab container only, see requirements.txt
 import redis
 import requests
 from flask import Flask, Response, jsonify

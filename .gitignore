@@ -90,6 +90,10 @@ backend/alembic/versions/*.py
 !backend/alembic/versions/__init__.py
 CLAUDE.md
 
+# Celery Beat's persistent scheduler state (local shelve file, rewritten on
+# every Beat restart) -- runtime state, not source.
+backend/celerybeat-schedule
+
 # Docs and markdown — only README.md files are tracked
 docs/
 *.md
@@ -97,6 +101,9 @@ docs/
 
 # Eval run outputs (the dataset corpus is committed; per-run reports are not)
 backend/tests/evals/dataset/report.json
+
+# Integration lab run outputs (per-run benchmark/A-B results, not source)
+labs/integration/results/
 
 # Secrets
 *.pem

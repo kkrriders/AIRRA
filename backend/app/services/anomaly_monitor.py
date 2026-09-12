@@ -121,7 +121,7 @@ class AnomalyMonitor:
                     await self._create_incident(
                         service_name, significant_anomalies, correlation=top_correlation
                     )
-                    await self._mark_recently_reported(service_name)
+                    # dedup mark happens inside _create_incident -> _create_incident_row
 
             except Exception as e:
                 logger.error(
@@ -184,56 +184,116 @@ class AnomalyMonitor:
         anomalies: list,
         correlation: "CorrelatedIncident | None" = None,
     ):
-        """Create an incident from detected anomalies.
+        """Create an incident from detected anomalies (polling path).
 
         When a CorrelatedIncident is supplied (i.e. multi-signal correlation
         succeeded), its confidence score and signal count are embedded in the
         incident context for downstream consumers (learning engine, analytics).
         """
-        try:
-            # Determine severity based on anomaly scores
-            max_deviation = max(a.deviation_sigma for a in anomalies)
-            if max_deviation >= 5.0:
-                severity = IncidentSeverity.CRITICAL
-            elif max_deviation >= 4.0:
-                severity = IncidentSeverity.HIGH
-            elif max_deviation >= 3.0:
-                severity = IncidentSeverity.MEDIUM
-            else:
-                severity = IncidentSeverity.LOW
+        # Determine severity based on anomaly scores
+        max_deviation = max(a.deviation_sigma for a in anomalies)
+        if max_deviation >= 5.0:
+            severity = IncidentSeverity.CRITICAL
+        elif max_deviation >= 4.0:
+            severity = IncidentSeverity.HIGH
+        elif max_deviation >= 3.0:
+            severity = IncidentSeverity.MEDIUM
+        else:
+            severity = IncidentSeverity.LOW
 
-            # Build description
-            anomaly_summaries = []
-            for a in anomalies[:3]:  # Top 3 anomalies
-                category = categorize_anomaly(a)
-                anomaly_summaries.append(
-                    f"{a.metric_name}: {category} "
-                    f"({a.deviation_sigma:.1f}σ deviation)"
-                )
-
-            description = "Automatically detected anomalies:\n" + "\n".join(
-                f"- {s}" for s in anomaly_summaries
+        # Build description
+        anomaly_summaries = []
+        for a in anomalies[:3]:  # Top 3 anomalies
+            category = categorize_anomaly(a)
+            anomaly_summaries.append(
+                f"{a.metric_name}: {category} "
+                f"({a.deviation_sigma:.1f}σ deviation)"
             )
 
-            # Create metrics snapshot
-            metrics_snapshot = {
-                a.metric_name: {
-                    "current": a.current_value,
-                    "expected": a.expected_value,
-                    "deviation_sigma": a.deviation_sigma,
-                }
-                for a in anomalies
-            }
+        description = "Automatically detected anomalies:\n" + "\n".join(
+            f"- {s}" for s in anomaly_summaries
+        )
 
-            incident_context: dict = {
-                "anomaly_count": len(anomalies),
-                "max_deviation": max_deviation,
-                "auto_detected": True,
+        # Create metrics snapshot
+        metrics_snapshot = {
+            a.metric_name: {
+                "current": a.current_value,
+                "expected": a.expected_value,
+                "deviation_sigma": a.deviation_sigma,
             }
-            if correlation is not None:
-                incident_context["correlation_confidence"] = round(correlation.confidence, 4)
-                incident_context["correlated_signal_count"] = len(correlation.signals)
+            for a in anomalies
+        }
 
+        incident_context: dict = {
+            "anomaly_count": len(anomalies),
+            "max_deviation": max_deviation,
+            "auto_detected": True,
+        }
+        if correlation is not None:
+            incident_context["correlation_confidence"] = round(correlation.confidence, 4)
+            incident_context["correlated_signal_count"] = len(correlation.signals)
+
+        await self._create_incident_row(
+            service_name=service_name,
+            title=f"Anomalies detected in {service_name}",
+            description=description,
+            severity=severity,
+            metrics_snapshot=metrics_snapshot,
+            incident_context=incident_context,
+            detection_source="airra_monitor",
+            log_suffix=f"anomalies: {len(anomalies)}",
+        )
+
+    async def create_incident_from_alert(
+        self,
+        service_name: str,
+        title: str,
+        description: str,
+        severity: IncidentSeverity,
+        metrics_snapshot: dict,
+        incident_context: dict,
+    ) -> bool:
+        """Create an incident from a Prometheus Alertmanager webhook (push path).
+
+        Shares dedup + row-creation + correlation + embedding with the polling
+        path via _create_incident_row, so both sources are indistinguishable
+        downstream. Returns False (no-op) if this service was already
+        reported within the dedup window -- Alertmanager's own repeat_interval
+        throttles re-notification, but AIRRA's dedup is the source of truth
+        shared across both detection paths.
+        """
+        if await self._is_recently_reported(service_name):
+            return False
+        incident_context = {**incident_context, "auto_detected": True, "push_detected": True}
+        await self._create_incident_row(
+            service_name=service_name,
+            title=title,
+            description=description,
+            severity=severity,
+            metrics_snapshot=metrics_snapshot,
+            incident_context=incident_context,
+            detection_source="alertmanager_webhook",
+            log_suffix="via Alertmanager webhook",
+        )
+        return True
+
+    async def _create_incident_row(
+        self,
+        service_name: str,
+        title: str,
+        description: str,
+        severity: IncidentSeverity,
+        metrics_snapshot: dict,
+        incident_context: dict,
+        detection_source: str,
+        log_suffix: str,
+    ):
+        """Shared incident-creation core: DB row, dependency/blast-radius
+        enrichment, cross-incident correlation, embedding, and dedup marking.
+        Used by both the polling path (_create_incident) and the push path
+        (create_incident_from_alert).
+        """
+        try:
             # Service dependency context — enriches incident embedding + LLM prompt
             try:
                 from app.services.dependency_graph import get_dependency_graph
@@ -266,14 +326,14 @@ class AnomalyMonitor:
             # Create incident
             async with get_db_context() as db:
                 incident = Incident(
-                    title=f"Anomalies detected in {service_name}",
+                    title=title,
                     description=description,
                     severity=severity,
                     status=IncidentStatus.DETECTED,
                     affected_service=service_name,
                     affected_components=[service_name],
                     detected_at=datetime.now(timezone.utc),
-                    detection_source="airra_monitor",
+                    detection_source=detection_source,
                     metrics_snapshot=metrics_snapshot,
                     context=incident_context,
                 )
@@ -284,7 +344,7 @@ class AnomalyMonitor:
 
                 logger.info(
                     f"Created incident {incident.id} for {service_name} "
-                    f"(severity: {severity.value}, anomalies: {len(anomalies)})"
+                    f"(severity: {severity.value}, {log_suffix})"
                 )
 
                 # Cross-incident correlation — group with other recent incidents
@@ -304,6 +364,30 @@ class AnomalyMonitor:
                 # can retrieve this incident as a past case.
                 from app.worker.tasks.embedding import embed_incident_task
                 embed_incident_task.delay(str(incident.id))
+
+                # Auto-trigger hypothesis generation -- same status+enqueue
+                # pattern as POST /{id}/analyze (incidents.py). Real detections
+                # (poll or push) have no human "start analysis" click the way
+                # the simulator's auto_analyze flag does; without this an
+                # incident sits at DETECTED forever until someone calls the
+                # endpoint by hand.
+                try:
+                    incident.status = IncidentStatus.ANALYZING
+                    await db.commit()
+                    from app.worker.celery_app import celery_app
+                    celery_app.send_task(
+                        "app.worker.tasks.analysis.analyze_incident",
+                        args=[str(incident.id)],
+                        queue="analysis",
+                    )
+                except Exception as analyze_exc:
+                    logger.error(f"Failed to auto-enqueue analysis for {incident.id}: {analyze_exc}")
+                    incident.status = IncidentStatus.DETECTED
+                    await db.commit()
+
+            # Dedup mark lives here (not in each caller) so both detection
+            # paths share one dedup window regardless of which one fires.
+            await self._mark_recently_reported(service_name)
 
         except Exception as e:
             logger.error(f"Failed to create incident for {service_name}: {str(e)}")

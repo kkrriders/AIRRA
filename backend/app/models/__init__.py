@@ -39,3 +39,25 @@ class TimestampMixin:
 
 
 __all__ = ["Base", "TimestampMixin"]
+
+
+# Import every model module so SQLAlchemy's declarative registry is complete the
+# moment `app.models` is imported. Without this, any entry point that imports only
+# a subset (e.g. the Celery anomaly-monitor task importing just Incident) hits
+# "mapper failed to locate a name 'EngineerReview'/'Hypothesis'" when the Incident
+# mapper configures its relationships. Kept at the bottom so Base/TimestampMixin
+# are already defined when each module does `from app.models import Base`.
+from app.models import (  # noqa: E402,F401
+    action,
+    audit_log,
+    engineer,
+    engineer_review,
+    hypothesis,
+    incident,
+    incident_event,
+    incident_pattern,
+    notification,
+    on_call_schedule,
+    postmortem,
+    user,
+)

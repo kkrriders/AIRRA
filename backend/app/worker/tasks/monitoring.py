@@ -7,11 +7,11 @@ the configured schedule (every 60s for anomaly checks, every 30min for AI genera
 every 10min for escalation checks).
 This replaces the infinite while-loop + asyncio.sleep() pattern from the services.
 """
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 from celery.utils.log import get_task_logger
 
+from app.worker.async_run import run_async
 from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -37,7 +37,7 @@ def run_anomaly_check() -> dict:
     prevents duplicate incidents even if called frequently.
     """
     try:
-        return asyncio.run(_anomaly_check())
+        return run_async(_anomaly_check())
     except Exception as e:
         logger.error(f"Anomaly check task failed: {e}", exc_info=True)
         return {"status": "error", "error": type(e).__name__}
@@ -52,7 +52,7 @@ def run_ai_generator() -> dict:
     environment (checked inside _ai_generator()).
     """
     try:
-        return asyncio.run(_ai_generator())
+        return run_async(_ai_generator())
     except Exception as e:
         logger.error(f"AI generator task failed: {e}", exc_info=True)
         return {"status": "error", "error": type(e).__name__}
@@ -69,7 +69,7 @@ def run_retention_cleanup() -> dict:
     no-op until an operator opts in.
     """
     try:
-        return asyncio.run(_retention_cleanup())
+        return run_async(_retention_cleanup())
     except Exception as e:
         logger.error(f"Retention cleanup task failed: {e}", exc_info=True)
         return {"status": "error", "error": type(e).__name__}
@@ -85,7 +85,7 @@ def run_escalation_check() -> dict:
     Each stale incident transitions to ESCALATED and fires a Slack alert.
     """
     try:
-        return asyncio.run(_escalation_check())
+        return run_async(_escalation_check())
     except Exception as e:
         logger.error(f"Escalation check task failed: {e}", exc_info=True)
         return {"status": "error", "error": type(e).__name__}

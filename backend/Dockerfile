@@ -8,10 +8,12 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies
+# procps provides pgrep, used by the celery-beat healthcheck (docker-compose.yml)
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
     curl \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -21,8 +23,10 @@ WORKDIR /app
 # requirements-dev.txt and are never installed in the production image.
 COPY requirements.txt ./
 
-# Install production dependencies only
-RUN pip install --no-cache-dir -r requirements.txt
+# Install production dependencies only.
+# --timeout/--retries: PyPI wheel downloads (torch, sentence-transformers) are
+# large; pip's 15s default timeout aborts the whole build on one slow wheel.
+RUN pip install --no-cache-dir --timeout 120 --retries 10 -r requirements.txt
 
 # Copy application code
 COPY . .

@@ -342,6 +342,16 @@ class Settings(BaseSettings):
             "Set AIRRA_SLACK_WEBHOOK_URL to enable. Empty = disabled (simulation mode)."
         ),
     )
+    alertmanager_webhook_token: str = Field(
+        default="airra-alertmanager-webhook-dev-secret",
+        description=(
+            "Shared secret Prometheus Alertmanager must present as a Bearer "
+            "token when calling POST /api/v1/webhooks/alertmanager. Must match "
+            "the literal value hardcoded in monitoring/prometheus/alertmanager.yml "
+            "(Alertmanager's config has no env-var interpolation). Change for "
+            "any deployment reachable outside the local docker network."
+        ),
+    )
 
     @field_validator("cors_origins")
     @classmethod

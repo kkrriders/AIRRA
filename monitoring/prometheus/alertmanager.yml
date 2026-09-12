@@ -1,0 +1,25 @@
+# Routes firing alerts straight to AIRRA's webhook -- this is the "push"
+# half of the poll-vs-push detection latency fix (see labs/integration/README.md
+# and README.md "Detection Latency Floor"). group_wait/group_interval are
+# short because the whole point is speed; repeat_interval is long since
+# AIRRA's own dedup (10 min) already suppresses duplicate incidents.
+#
+# The bearer token below is a literal, not ${AIRRA_ALERTMANAGER_WEBHOOK_TOKEN}
+# -- Alertmanager's config file has no env-var interpolation. Must match
+# backend/app/config.py's alertmanager_webhook_token exactly. Change both if
+# you change one.
+route:
+  receiver: airra-webhook
+  group_by: ['service']
+  group_wait: 0s
+  group_interval: 15s
+  repeat_interval: 1h
+
+receivers:
+  - name: airra-webhook
+    webhook_configs:
+      - url: 'http://airra-backend:8000/api/v1/webhooks/alertmanager'
+        send_resolved: false
+        http_config:
+          authorization:
+            credentials: 'airra-alertmanager-webhook-dev-secret'

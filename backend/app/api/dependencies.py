@@ -62,6 +62,26 @@ async def verify_api_key(
     return api_key
 
 
+async def verify_alertmanager_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> None:
+    """
+    Verify the shared secret Prometheus Alertmanager presents as
+    ``Authorization: Bearer <token>`` when it calls AIRRA's webhook.
+
+    A dedicated static token (not the JWT flow, not X-API-Key) because
+    Alertmanager's config file has no env-var interpolation -- the same
+    literal value must be hardcoded in monitoring/prometheus/alertmanager.yml
+    and set here via AIRRA_ALERTMANAGER_WEBHOOK_TOKEN.
+    """
+    configured = settings.alertmanager_webhook_token
+    if not credentials or not secrets.compare_digest(credentials.credentials, configured):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing Alertmanager webhook token",
+        )
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),

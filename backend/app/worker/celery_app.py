@@ -13,7 +13,15 @@ from celery import Celery
 from app.config import settings
 
 # Named constants for Beat schedule intervals (N5)
-ANOMALY_CHECK_INTERVAL_SECONDS: float = 60.0       # every minute
+# Each check still queries the full anomaly_detection_window (300s default)
+# of history regardless of poll frequency, so polling more often loses no
+# statistical rigor, it just notices sooner. 30s (twice Prometheus's own 15s
+# scrape_interval) cuts the documented ~75-85s worst-case detection floor
+# (README.md "Detection Latency Floor") roughly in half while leaving a real
+# gap for the push path (Prometheus Alertmanager -> AIRRA webhook,
+# webhooks.py) to win detection races instead of just being deduped behind
+# an equally-fast poll -- see labs/integration/results/ A/B, 2026-09-12.
+ANOMALY_CHECK_INTERVAL_SECONDS: float = 30.0
 AI_GENERATOR_INTERVAL_SECONDS: float = 30 * 60.0   # every 30 minutes (free-tier safe)
 ESCALATION_CHECK_INTERVAL_SECONDS: float = 10 * 60.0  # every 10 minutes
 RETENTION_CLEANUP_INTERVAL_SECONDS: float = 24 * 60 * 60.0  # once a day

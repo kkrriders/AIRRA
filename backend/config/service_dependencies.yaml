@@ -1,4 +1,17 @@
+# Service topology for AIRRA's topology-aware RCA:
+#   - blast-radius scoring (criticality of the affected subtree)
+#   - dependency confidence boost (hypothesis about an upstream that is also failing)
+#   - cross-incident correlation (incidents sharing a common upstream, 5-min window)
+#
+# Loaded by app/services/dependency_graph.py (first match of
+# config/service_dependencies.yaml relative to the backend working dir).
+# The graph is a flat namespace, so the two sets below coexist; AIRRA only ever
+# queries the services named in AIRRA_MONITORED_SERVICES for the active profile.
+#
+# tier-0 = leaf infra, tier-1 = edge, tier-2 = internal service.
+
 services:
+  # --- Synthetic 'demo' profile (portfolio simulator) ---
   frontend:
     depends_on:
     - api-gateway
@@ -46,3 +59,52 @@ services:
     tier: tier-0
     team: infrastructure
     criticality: high
+
+  # --- AI Engineering Platform ('kubernetes' profile, namespace ai-platform) ---
+  # docs/superpowers/specs/2026-09-10-airra-ai-platform-integration-design.md
+  # `redis` above is shared (tool_runner also depends on it).
+  api:
+    depends_on: [orchestrator]
+    tier: tier-1
+    team: ai-platform
+    criticality: high
+  orchestrator:
+    depends_on: [researcher, tool_runner, executor, verifier]
+    tier: tier-1
+    team: ai-platform
+    criticality: critical
+  researcher:
+    depends_on: [qdrant, groq]
+    tier: tier-2
+    team: ai-platform
+    criticality: medium
+  tool_runner:
+    depends_on: [redis, postgres, groq]
+    tier: tier-2
+    team: ai-platform
+    criticality: high
+  executor:
+    depends_on: [postgres, groq]
+    tier: tier-2
+    team: ai-platform
+    criticality: high
+  verifier:
+    depends_on: [groq]
+    tier: tier-2
+    team: ai-platform
+    criticality: medium
+  qdrant:
+    depends_on: []
+    tier: tier-0
+    team: infrastructure
+    criticality: high
+  postgres:
+    depends_on: []
+    tier: tier-0
+    team: infrastructure
+    criticality: critical
+  groq:
+    depends_on: []
+    tier: tier-0
+    team: infrastructure
+    criticality: critical

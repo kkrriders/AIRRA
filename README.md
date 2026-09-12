@@ -339,18 +339,20 @@ The blast radius calculator now uses criticality-weighted downstream scoring and
 ### Embedding Model Cold Start
 `all-MiniLM-L6-v2` loads lazily on first use. The first embedding request per worker process takes ~2–4s (model load). Subsequent requests: ~20ms. In production, trigger a warm-up embed at worker startup.
 
-### Detection Latency Floor: ~75 Seconds
+### Detection Latency Floor: ~30 Seconds
 
 AIRRA's current detection path is **poll-based**, not push-based. Total worst-case latency before an incident is created:
 
 | Step | Latency |
 |------|---------|
 | Prometheus scrape interval (`prometheus.yml`) | 15 s |
-| Celery Beat interval (`ANOMALY_CHECK_INTERVAL_SECONDS`) | 60 s |
+| Celery Beat interval (`ANOMALY_CHECK_INTERVAL_SECONDS`) | 15 s (tuned down from 60s 2026-09-12 — matches the scrape interval, since each check queries the full `anomaly_detection_window` regardless of poll frequency, so polling more often costs nothing statistically) |
 | Task queue pickup + query execution | 5–10 s |
-| **Worst-case total** | **~75–85 s** |
+| **Worst-case total** | **~30–35 s** |
 
-If an anomaly fires 1 second after the Beat just ran, the system won't detect it for another ~70 seconds. For critical payment or authentication failures this is a meaningful exposure window — thousands of transactions can fail in 60 seconds.
+Measured live against a real workload (AI Engineering Platform integration, `labs/integration/benchmark-run.ps1`): MTTD 55.9s at the old 60s interval. Re-verify at the new interval when convenient.
+
+If an anomaly fires 1 second after the Beat just ran, the system won't detect it for another ~30 seconds. For critical payment or authentication failures this is still a meaningful exposure window — the push-based fix below removes it entirely.
 
 **Why this matters for production fintech**: P1 SLAs typically require detection in <30 seconds, not 75+.
 
@@ -712,7 +714,7 @@ Each entry stores `event_type`, `actor` (human email or `"agent"`), `outcome`, `
 - [x] **Security controls** — prompt injection guard (OWASP LLM01), credential redaction before embedding (OWASP LLM06), trust-score-weighted RAG retrieval
 - [x] **Accurate escalation clock** — `pending_approval_at` column (migration 010) replaces `updated_at` as SLA timer; unrelated field updates no longer defer escalation
 - [x] **Resilient analysis dispatch** — `/analyze` returns 503 + reverts status to DETECTED if Celery queue is unavailable, preventing incidents stranded in ANALYZING
-- [ ] **Alertmanager webhook receiver** — replace 60s Beat polling with Prometheus Alertmanager push; reduces detection latency from ~75s to <15s (evaluation_interval already 15s)
+- [ ] **Alertmanager webhook receiver** — replace 15s Beat polling with Prometheus Alertmanager push; reduces detection latency from ~30s to <15s (evaluation_interval already 15s)
 - [ ] **AWS Health API integration** — surface third-party incidents alongside Prometheus anomalies
 - [ ] **Multi-agent architecture** — specialized agents per stage using Anthropic Agent SDK
 - [ ] **MCP tools** — expose AIRRA's incident API as MCP tools for Claude integration

@@ -1,0 +1,77 @@
+groups:
+  - name: ai-platform-anomaly
+    interval: 15s
+    rules:
+      # Push-based counterpart to AIRRA's own poll-based z-score/EWMA/MAD
+      # ensemble (anomaly_detector.py) -- a deliberately simpler single
+      # z-score test per golden signal, evaluated natively by Prometheus
+      # every 15s instead of waiting for AIRRA to ask. Generic across all
+      # ai-platform services via `by (service)` grouping rather than one
+      # rule per service. See labs/integration/README.md and
+      # backend/app/api/v1/webhooks.py for the receiving end.
+      #
+      # Baseline = avg/stddev of a 10m window ending 1m ago (`offset 1m` on
+      # the subquery), NOT the trailing 10m up to now. Mirrors AIRRA's own
+      # anomaly_detector.py, which excludes the current point from its
+      # baseline (`baseline_values = all_values[:-1]`) for the same reason:
+      # a live anomaly sitting inside its own baseline window inflates that
+      # baseline's stddev and can mask itself (measured live 2026-09-12 --
+      # a 300x request-rate spike raised the 10m stddev enough that the
+      # threshold exceeded the spike itself). stddev is also floored
+      # (clamp_min) so a genuinely flat, zero-variance metric can't produce
+      # a divide-by-near-zero false trigger.
+      #
+      # `for: 0s` (fires on the first true evaluation, no debounce) --
+      # speed is the entire point of this push path; AIRRA's own 10-minute
+      # dedup window (shared with the polling path) is what guards against
+      # duplicate incidents from a flapping condition, not `for`.
+      - alert: AIPlatformLatencyAnomaly
+        expr: >
+          abs(
+            histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{namespace="ai-platform"}[1m])))
+            -
+            avg_over_time((histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{namespace="ai-platform"}[1m]))))[10m:1m] offset 1m)
+          )
+          >
+          3 * clamp_min(stddev_over_time((histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{namespace="ai-platform"}[1m]))))[10m:1m] offset 1m), 0.05)
+        for: 0s
+        labels:
+          severity: critical
+          component: ai-platform
+        annotations:
+          summary: "Latency anomaly on {{ $labels.service }}"
+          description: "p95 latency for {{ $labels.service }} deviated more than 3 stddev from its 10m baseline (current {{ $value | humanizeDuration }})."
+
+      - alert: AIPlatformErrorRateAnomaly
+        expr: >
+          abs(
+            (sum by (service) (rate(http_requests_total{namespace="ai-platform",status=~"5.."}[1m])) / clamp_min(sum by (service) (rate(http_requests_total{namespace="ai-platform"}[1m])), 0.001))
+            -
+            avg_over_time((sum by (service) (rate(http_requests_total{namespace="ai-platform",status=~"5.."}[1m])) / clamp_min(sum by (service) (rate(http_requests_total{namespace="ai-platform"}[1m])), 0.001))[10m:1m] offset 1m)
+          )
+          >
+          3 * clamp_min(stddev_over_time((sum by (service) (rate(http_requests_total{namespace="ai-platform",status=~"5.."}[1m])) / clamp_min(sum by (service) (rate(http_requests_total{namespace="ai-platform"}[1m])), 0.001))[10m:1m] offset 1m), 0.02)
+        for: 0s
+        labels:
+          severity: critical
+          component: ai-platform
+        annotations:
+          summary: "Error-rate anomaly on {{ $labels.service }}"
+          description: "Error rate for {{ $labels.service }} deviated more than 3 stddev from its 10m baseline (current {{ $value | humanizePercentage }})."
+
+      - alert: AIPlatformRequestRateAnomaly
+        expr: >
+          abs(
+            sum by (service) (rate(http_requests_total{namespace="ai-platform"}[1m]))
+            -
+            avg_over_time((sum by (service) (rate(http_requests_total{namespace="ai-platform"}[1m])))[10m:1m] offset 1m)
+          )
+          >
+          3 * clamp_min(stddev_over_time((sum by (service) (rate(http_requests_total{namespace="ai-platform"}[1m])))[10m:1m] offset 1m), 0.01)
+        for: 0s
+        labels:
+          severity: warning
+          component: ai-platform
+        annotations:
+          summary: "Request-rate anomaly on {{ $labels.service }}"
+          description: "Request rate for {{ $labels.service }} deviated more than 3 stddev from its 10m baseline (current {{ $value | humanize }}/s)."

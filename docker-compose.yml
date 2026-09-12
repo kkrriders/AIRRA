@@ -7,14 +7,25 @@ x-backend-env: &backend-env
   AIRRA_DEBUG: "true"
   AIRRA_LOG_LEVEL: INFO
   AIRRA_API_KEY: ${AIRRA_API_KEY}
-  AIRRA_LLM_PROVIDER: groq
-  AIRRA_LLM_MODEL: llama-3.3-70b-versatile        # reasoning tasks (analysis, hypotheses)
-  AIRRA_LLM_GENERATOR_MODEL: llama-3.1-8b-instant # creative tasks (AI incident gen) — Groq free tier
+  AIRRA_LLM_PROVIDER: ${AIRRA_LLM_PROVIDER:-groq}
+  # reasoning tasks (analysis, hypotheses). Default needs a paid Groq tier;
+  # override in .env (e.g. AIRRA_LLM_MODEL=llama-3.1-8b-instant) for free-tier keys.
+  AIRRA_LLM_MODEL: ${AIRRA_LLM_MODEL:-llama-3.3-70b-versatile}
+  AIRRA_LLM_GENERATOR_MODEL: ${AIRRA_LLM_GENERATOR_MODEL:-llama-3.1-8b-instant} # creative tasks — Groq free tier
  
   AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
   AIRRA_SLACK_WEBHOOK_URL: ${AIRRA_SLACK_WEBHOOK_URL:-}
+  AIRRA_ALERTMANAGER_WEBHOOK_TOKEN: ${AIRRA_ALERTMANAGER_WEBHOOK_TOKEN:-airra-alertmanager-webhook-dev-secret}
   AIRRA_OTEL_ENABLED: ${AIRRA_OTEL_ENABLED:-false}
   AIRRA_OTEL_ENDPOINT: http://jaeger:4317
+
+  # Metric profile: 'demo' (synthetic portfolio simulator, default) or 'kubernetes'
+  # (real instrumented workload — the kind lab, or the AI Engineering Platform
+  # reached over the `airra-mesh` network). Override the three below in .env for
+  # the integrated run; defaults keep the demo behaviour unchanged.
+  AIRRA_PROMETHEUS_METRIC_PROFILE: ${AIRRA_PROMETHEUS_METRIC_PROFILE:-demo}
+  AIRRA_KUBERNETES_NAMESPACE: ${AIRRA_KUBERNETES_NAMESPACE:-airra-lab}
+  AIRRA_MONITORED_SERVICES: '${AIRRA_MONITORED_SERVICES:-["payment-service","order-service","user-service","inventory-service","notification-service"]}'
 
 services:
   # PostgreSQL Database
@@ -66,6 +77,9 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: airra-prometheus
+    networks:
+      - default
+      - airra-mesh   # so it can scrape the AI Engineering Platform's ai-backend:8000
     ports:
       - "9090:9090"
     volumes:
@@ -83,7 +97,23 @@ services:
       timeout: 5s
       retries: 5
 
- 
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: airra-alertmanager
+    networks:
+      - default
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   db-migrate:
     build:
       context: ./backend
@@ -249,6 +279,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+networks:
+  default:
+  # Cross-stack bridge to the AI Engineering Platform. Created once out of band
+  # (`docker network create airra-mesh`); both stacks attach as external so
+  # neither owns it and stack up-order does not matter.
+  airra-mesh:
+    external: true
+    name: airra-mesh
 
 volumes:
   postgres_data:

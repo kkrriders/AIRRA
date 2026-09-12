@@ -515,6 +515,7 @@ from app.api.v1 import (  # noqa: E402
     postmortems,
     quick_incident,
     simulator,
+    webhooks,
 )
 from app.api.v1.admin import engineers, reviews, usage  # noqa: E402
 from app.api.v1 import auth, stream  # noqa: E402
@@ -626,6 +627,14 @@ app.include_router(
 
 # Demo metrics — no auth, no /api/v1 prefix (Prometheus scrapes this directly)
 app.include_router(demo_metrics.router, tags=["Demo Metrics"])
+
+# Alertmanager push webhook — its own Bearer-token auth (verify_alertmanager_token),
+# not verify_api_key, since Alertmanager can't send an X-API-Key header cleanly.
+app.include_router(
+    webhooks.router,
+    prefix=f"{settings.api_v1_prefix}/webhooks",
+    tags=["Webhooks"],
+)
 
 
 # Global exception handler

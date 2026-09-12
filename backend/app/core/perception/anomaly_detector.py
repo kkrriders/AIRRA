@@ -20,6 +20,7 @@ No ML model here on purpose — robust statistics + correlation + RAG reasoning 
 a better engineering story than a black-box detector nobody can debug at 3am.
 """
 import logging
+import math
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -86,6 +87,25 @@ def _relative_deviation_sigma(current: float, reference: float) -> float:
     return (abs(current - reference) / base) * 10.0
 
 
+def _spread_floor(reference: float) -> float:
+    """
+    Practical noise floor for a baseline's stdev/MAD. Below this, floating-point
+    jitter on a flat, near-idle metric (e.g. a health-check endpoint sitting at
+    ~0.05 req/s) produces a spread estimate too tiny to be a real signal --
+    dividing by it blows the z-score/MAD-sigma up into a false-positive
+    "critical" reading even for noise-level movement. Same class of bug the
+    Prometheus alert rules guard against with clamp_min() (see
+    monitoring/prometheus/alerts/ai-platform-anomaly.yml).
+
+    0.1% of the baseline's own magnitude, floored at 0.01 absolute -- the
+    relative term alone is too coarse for a small-magnitude metric (0.01
+    matches the request_rate clamp_min already used in the YAML rules), and
+    an absolute-only floor would swallow genuine tight-but-real spread on a
+    large-magnitude metric (e.g. stdev ~0.3 on a ~100-unit baseline).
+    """
+    return max(abs(reference) * 0.001, 0.01)
+
+
 def _ewma_series(values: list[float], alpha: float) -> list[float]:
     """Exponentially weighted moving average, seeded with the first value."""
     smoothed = values[0]
@@ -103,7 +123,7 @@ def _zscore_method(baseline: list[float], current: float, threshold: float) -> _
     except statistics.StatisticsError:
         stdev = 0.0
 
-    if stdev == 0:
+    if stdev < _spread_floor(mean):
         score = _relative_deviation_sigma(current, mean)
     else:
         score = abs(current - mean) / stdev
@@ -160,7 +180,7 @@ def _mad_method(baseline: list[float], current: float, threshold: float) -> _Met
     median = statistics.median(baseline)
     mad = statistics.median([abs(x - median) for x in baseline])
 
-    if mad == 0:
+    if mad < _spread_floor(median):
         score = _relative_deviation_sigma(current, median)
     else:
         score = _MAD_TO_SIGMA * abs(current - median) / mad
@@ -230,13 +250,20 @@ class AnomalyDetector:
         if not metric_result.values:
             return []
 
-        all_values = [dp.value for dp in metric_result.values]
+        # Prometheus can return NaN/Inf for a sparse series (e.g.
+        # histogram_quantile over an empty bucket) - non-finite values break
+        # statistics.mean/stdev downstream (a float sum can't produce the
+        # exact-Fraction result statistics.stdev expects, raising a raw
+        # AttributeError instead of a clean StatisticsError).
+        finite_points = [dp for dp in metric_result.values if math.isfinite(dp.value)]
+
+        all_values = [dp.value for dp in finite_points]
         if len(all_values) < 3:
             logger.warning(f"Insufficient data points for {metric_result.metric_name}")
             return []
 
         baseline_values = all_values[:-1]
-        current_point = metric_result.values[-1]
+        current_point = finite_points[-1]
         current_value = current_point.value
 
         results: list[_MethodResult] = []

@@ -240,6 +240,27 @@ class TestEnsembleDetection:
         # min_votes=2: that same lone vote is now suppressed.
         assert AnomalyDetector(threshold_sigma=3.0, min_votes=2).detect(metric) == []
 
+    def test_flat_baseline_does_not_explode_into_false_positive_critical(self):
+        """
+        Regression: a near-idle metric whose baseline samples are all ~equal up
+        to floating-point jitter (e.g. Prometheus rate() noise on a near-zero-
+        traffic service) must not turn an unremarkable move into an absurd
+        sigma reading. Caught live 2026-09-12: request_rate baseline ~0.067
+        (jitter-only variance), a drop to 0.044 was reported as "10578 sigma,
+        critical" -- dividing by a near-machine-epsilon stdev/MAD.
+        """
+        values = [0.0667 + (1e-9 if i % 2 else -1e-9) for i in range(20)]
+        values.append(0.0444)  # ~33% real drop, tiny absolute magnitude
+        metric = self._metric(values, name="request_rate")
+
+        anomalies = AnomalyDetector(threshold_sigma=3.0).detect(metric)
+
+        if anomalies:
+            assert anomalies[0].deviation_sigma < 100, (
+                "spread floor should keep sigma bounded instead of exploding "
+                f"on float jitter, got {anomalies[0].deviation_sigma}"
+            )
+
     def test_extreme_single_method_flags_alone(self):
         """An unambiguous 10x spike triggers even if only one method's model holds."""
         values = [50.0] * 20 + [500.0]

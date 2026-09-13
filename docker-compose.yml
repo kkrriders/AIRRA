@@ -2,7 +2,7 @@
 x-backend-env: &backend-env
   AIRRA_DATABASE_URL: postgresql+asyncpg://airra:${POSTGRES_PASSWORD:-airra}@postgres:5432/airra
   AIRRA_REDIS_URL: redis://redis:6379/0
-  AIRRA_PROMETHEUS_URL: http://prometheus:9090
+  AIRRA_PROMETHEUS_URL: ${AIRRA_PROMETHEUS_URL:-http://prometheus:9090}
   AIRRA_ENVIRONMENT: development
   AIRRA_DEBUG: "true"
   AIRRA_LOG_LEVEL: INFO

@@ -4,7 +4,6 @@ Celery task for generating and storing incident embeddings.
 Called after incident creation (anomaly_monitor, API) and after resolution
 (learning_engine) to keep embeddings rich with outcome context.
 """
-import asyncio
 from uuid import UUID
 
 from celery.utils.log import get_task_logger
@@ -12,6 +11,7 @@ from sqlalchemy import select
 
 from app.database import get_db_context
 from app.models.incident import Incident
+from app.worker.async_run import run_async
 from app.worker.celery_app import celery_app
 
 logger = get_task_logger(__name__)
@@ -36,7 +36,7 @@ def embed_incident_task(incident_id: str, extra_context: dict | None = None) -> 
         {"status": "ok"} on success, {"status": "error", "error": ...} on failure.
     """
     try:
-        return asyncio.run(_embed(incident_id, extra_context))
+        return run_async(_embed(incident_id, extra_context))
     except Exception as exc:
         logger.error(f"embed_incident_task failed for {incident_id}: {exc}", exc_info=True)
         raise embed_incident_task.retry(exc=exc)
@@ -57,7 +57,7 @@ def backfill_missing_embeddings_task(batch_size: int = 200) -> dict:
     existing per-incident embed_incident_task for each one.
     """
     try:
-        return asyncio.run(_backfill_missing(batch_size))
+        return run_async(_backfill_missing(batch_size))
     except Exception as exc:
         logger.error(f"backfill_missing_embeddings_task failed: {exc}", exc_info=True)
         return {"status": "error", "error": type(exc).__name__}

@@ -129,6 +129,13 @@ try {
     $stages.recovery_verified_at = Iso (Get-Date)
     $success = $true
 }
+catch {
+    # Record the failure instead of letting it escape -- a caller looping this
+    # script (benchmark-repeat.ps1) needs one run's failure to produce a
+    # success:false record, not crash the whole loop.
+    if (-not $failureStage) { $failureStage = 'unknown' }
+    Write-Warning "Run failed at stage '$failureStage': $($_.Exception.Message)"
+}
 finally {
     # chaos.ps1 recover removes the CRASH_LOOP env var, which itself triggers a
     # rolling update to fresh pods -- an explicit `kubectl delete pod` here is
@@ -137,6 +144,22 @@ finally {
     # (prometheus_client.py's default lookback_minutes=5) is trying to settle.
     & "$PSScriptRoot\chaos.ps1" recover | Out-Host
     try { docker exec airra-redis redis-cli DEL "airra:anomaly_dedup:$TargetService" | Out-Null } catch {}
+}
+
+if (-not $stages.fault_injected_at) {
+    # Failed before injection even happened (e.g. Prometheus unreachable for the
+    # baseline query) -- nothing to compute deltas from, still emit a record.
+    if (-not $failureStage) { $failureStage = 'fault_injected' }
+    $record = [ordered]@{
+        run_id = $runId; success = $false; failure_stage = $failureStage
+        incident_id = $incidentId; execution_mode = $executionMode; stages = $stages; deltas_seconds = $null
+    }
+    if ($OutFile) {
+        New-Item -ItemType Directory -Force -Path (Split-Path $OutFile) | Out-Null
+        $record | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 $OutFile
+    }
+    $record | ConvertTo-Json -Depth 6
+    return
 }
 
 $t0Parsed = [DateTime]::Parse($stages.fault_injected_at)

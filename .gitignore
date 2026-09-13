@@ -101,6 +101,7 @@ docs/
 
 # Eval run outputs (the dataset corpus is committed; per-run reports are not)
 backend/tests/evals/dataset/report.json
+backend/tests/evals/dataset/security_report.json
 
 # Integration lab run outputs (per-run benchmark/A-B results, not source)
 labs/integration/results/

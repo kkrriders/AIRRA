@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def ensure_action_approved(action: Action) -> None:
+    """Single choke point guaranteeing no remediation executes without a human
+    approval. Exercised directly by execute_action AND by
+    tests/evals/security_benchmark.py's approval-bypass fuzz — one guard, not
+    a duplicated condition that could drift out of sync with the test."""
+    if action.status != ActionStatus.APPROVED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Action must be approved first (current status: {action.status.value})",
+        )
+
+
 @router.get("", response_model=list[ActionResponse])
 async def list_actions(
     skip: int = Query(0, ge=0),
@@ -89,11 +101,7 @@ async def execute_action(
     if not action:
         raise HTTPException(status_code=404, detail="Action not found")
 
-    if action.status != ActionStatus.APPROVED:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Action must be approved first (current status: {action.status.value})",
-        )
+    ensure_action_approved(action)
 
     # NEW-12 fix: fetch incident before the first commit and guard that it is
     # still APPROVED. Transition it to EXECUTING atomically with the action so

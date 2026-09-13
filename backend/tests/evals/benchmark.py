@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import statistics
 import sys
 import time
@@ -150,23 +151,28 @@ def run_detection(rows: list[dict]) -> DetectionReport:
 # --------------------------------------------------------------------------- #
 # stage: diagnosis
 # --------------------------------------------------------------------------- #
-# We model that a correct hypothesis comes with more corroborating evidence than a
-# plausible-but-wrong one (same assumption the hand-written golden fixtures use).
-# Evidence quality is the ONLY hand-authored signal; the real deterministic
-# confidence formula still has to combine it with category priors and anomaly
-# strength to rank correctly — and a high-prior distractor (error_spike 0.85) can
-# still beat a low-prior truth (network_issue 0.55). That failure mode is exactly
-# what this metric is meant to catch.
+# Truth and distractors get the SAME evidence count and a relevance draw from
+# the SAME tight band (0.60-0.85), seeded per-incident so a distractor's draw
+# beats the truth's roughly as often as it doesn't -- no artificial evidence-
+# quality tell for the ranker to key off. What decides top-1/top-3 now is
+# whatever the real deterministic confidence formula actually weighs besides
+# evidence: category priors (error_spike 0.85 vs. network_issue 0.55) and
+# anomaly strength. A high-prior distractor beating a low-prior truth on a
+# close evidence roll is a real failure mode, not a harness bug -- that's
+# what this metric is now built to surface instead of hide.
+_RELEVANCE_LOW, _RELEVANCE_HIGH = 0.60, 0.85
+_EVIDENCE_COUNT = 2
+
+
 def _candidates(row: dict) -> tuple[list[HypothesisItemLLM], str]:
     truth = row["ground_truth"]["root_cause_category"]
     metric = row["metric_window"]["metric_name"]
     cats = [truth, *[c for c in row["distractor_categories"] if c != truth]]
+    rng = random.Random(row["id"])  # reproducible per incident, varies across the corpus
 
     out: list[HypothesisItemLLM] = []
     for cat in cats:
-        is_truth = cat == truth
-        relevance = 0.9 if is_truth else 0.55
-        n_evidence = 2 if is_truth else 1
+        relevance = rng.uniform(_RELEVANCE_LOW, _RELEVANCE_HIGH)
         out.append(
             HypothesisItemLLM(
                 description=f"{cat} in service — {row['description'][:80]}",
@@ -176,9 +182,9 @@ def _candidates(row: dict) -> tuple[list[HypothesisItemLLM], str]:
                         signal_type="metric",
                         signal_name=metric,
                         observation=f"{metric} deviated from baseline",
-                        relevance=relevance - 0.05 * j,
+                        relevance=round(relevance - 0.03 * j, 3),
                     )
-                    for j in range(n_evidence)
+                    for j in range(_EVIDENCE_COUNT)
                 ],
                 reasoning=f"Observed {metric} pattern is consistent with {cat}.",
             )
@@ -287,6 +293,8 @@ class RetrievalReport:
     reason: str = ""
     recall_at_3: float = 0.0
     mrr: float = 0.0
+    vector_only_recall_at_3: float = 0.0
+    vector_only_mrr: float = 0.0
     n: int = 0
 
 
@@ -334,25 +342,40 @@ def run_retrieval(rows: list[dict]) -> RetrievalReport:
 
     hits_at_3 = 0
     rr_total = 0.0
+    vec_hits_at_3 = 0
+    vec_rr_total = 0.0
     for row, vec in zip(rows, inc_vecs):
+        cosines = [float((vec * pat_vecs[i]).sum()) for i in range(len(keys))]
+
         # composite re-rank per CLAUDE.md: 0.5*vector + 0.3*service + 0.2*metric
         scores = []
         for i, k in enumerate(keys):
-            cos = float((vec * pat_vecs[i]).sum())
             svc = 1.0 if pat_services[i] == row["service"] else 0.0
             met = 1.0 if pat_metrics[i] == row["metric_window"]["metric_name"] else 0.0
-            scores.append((k, 0.5 * cos + 0.3 * svc + 0.2 * met))
+            scores.append((k, 0.5 * cosines[i] + 0.3 * svc + 0.2 * met))
         scores.sort(key=lambda x: x[1], reverse=True)
         ranked = [k for k, _ in scores]
         rank = ranked.index(row["archetype"]) + 1
         hits_at_3 += rank <= 3
         rr_total += 1.0 / rank
 
+        # vector-only: isolates what the embedding model itself contributes,
+        # since service+metric are deterministic per archetype in this synthetic
+        # corpus and can otherwise carry the composite score on their own.
+        vec_scores = sorted(zip(keys, cosines), key=lambda x: x[1], reverse=True)
+        vec_ranked = [k for k, _ in vec_scores]
+        vec_rank = vec_ranked.index(row["archetype"]) + 1
+        vec_hits_at_3 += vec_rank <= 3
+        vec_rr_total += 1.0 / vec_rank
+
+    n = len(rows)
     return RetrievalReport(
         skipped=False,
-        recall_at_3=_pct(hits_at_3, len(rows)),
-        mrr=rr_total / len(rows) if rows else 0.0,
-        n=len(rows),
+        recall_at_3=_pct(hits_at_3, n),
+        mrr=rr_total / n if n else 0.0,
+        vector_only_recall_at_3=_pct(vec_hits_at_3, n),
+        vector_only_mrr=vec_rr_total / n if n else 0.0,
+        n=n,
     )
 
 
@@ -420,8 +443,12 @@ def _print(bm: Benchmark) -> None:
     if rt.skipped:
         print(f"  SKIPPED — {rt.reason}\n")
     else:
-        print(f"  Recall@3            {rt.recall_at_3:.3f}")
-        print(f"  MRR                 {rt.mrr:.3f}\n")
+        print(f"  Recall@3 (composite)     {rt.recall_at_3:.3f}")
+        print(f"  MRR (composite)          {rt.mrr:.3f}")
+        print(f"  Recall@3 (vector only)   {rt.vector_only_recall_at_3:.3f}   "
+              f"<- isolates the embedding model; service+metric match is a")
+        print(f"  MRR (vector only)        {rt.vector_only_mrr:.3f}      "
+              f"deterministic tell in this synthetic corpus, so composite alone overstates it\n")
 
     print("DIAGNOSIS   (real calculate_hypothesis_confidence)")
     print(f"  top-1 accuracy      {dg.top1_accuracy:.3f}")

@@ -33,6 +33,8 @@ class AuditEventType(str, enum.Enum):
     POLICY_BLOCKED = "policy_blocked"
     ANALYSIS_COMPLETE = "analysis_complete"
     VERIFICATION_COMPLETE = "verification_complete"
+    DATA_DELETION_REQUESTED = "data_deletion_requested"
+    DATA_DELETED = "data_deleted"
 
 
 class AgentAuditLog(Base, TimestampMixin):

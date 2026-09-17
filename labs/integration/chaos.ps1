@@ -124,11 +124,23 @@ function Wait-PlatformHealthy {
     throw "platform backend didn't come back healthy at $PlatformUrl/health after recreate"
 }
 
+function Invoke-DockerCompose([string[]]$ComposeArgs) {
+    # ponytail: docker compose's normal stderr status lines ("Container X
+    # Running") get promoted to a terminating NativeCommandError under this
+    # script's $ErrorActionPreference = 'Stop' (PowerShell 5.1 quirk, not an
+    # actual docker failure) -- relax it just for this call and rely on
+    # $LASTEXITCODE (checked by every caller) instead.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & docker compose -f $PlatformCompose @ComposeArgs 2>&1 | Out-Host }
+    finally { $ErrorActionPreference = $prev }
+}
+
 function Set-ChaosFailNode([string]$value) {
     # compose interpolates ${CHAOS_FAIL_NODE:-} at parse time from this process's env
     if ([string]::IsNullOrEmpty($value)) { $env:CHAOS_FAIL_NODE = '' }
     else { $env:CHAOS_FAIL_NODE = $value }
-    & docker compose -f $PlatformCompose up -d backend | Out-Host
+    Invoke-DockerCompose @('up', '-d', 'backend')
     if ($LASTEXITCODE -ne 0) { throw "docker compose up -d backend failed" }
     Wait-PlatformHealthy
 }
@@ -143,7 +155,7 @@ function Set-GroqBaseUrl([string]$value) {
     # compose interpolates ${GROQ_BASE_URL:-} at parse time from this process's env
     if ([string]::IsNullOrEmpty($value)) { $env:GROQ_BASE_URL = '' }
     else { $env:GROQ_BASE_URL = $value }
-    & docker compose -f $PlatformCompose up -d backend | Out-Host
+    Invoke-DockerCompose @('up', '-d', 'backend')
     if ($LASTEXITCODE -ne 0) { throw "docker compose up -d backend failed" }
     Wait-PlatformHealthy
 }
@@ -193,7 +205,7 @@ switch ("$Scenario/$Action") {
     }
 
     'llm-failure/inject' {
-        & docker compose -f $PlatformCompose --profile chaos up -d --build mock-llm | Out-Host
+        Invoke-DockerCompose @('--profile', 'chaos', 'up', '-d', '--build', 'mock-llm')
         if ($LASTEXITCODE -ne 0) { throw "docker compose up -d mock-llm failed" }
         # container start != uvicorn ready - poll /health rather than racing the first request
         $up = $false

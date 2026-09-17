@@ -1,4 +1,9 @@
 """Integration tests for Incidents API endpoints."""
+from sqlalchemy import select
+
+from app.models.audit_log import AgentAuditLog, AuditEventType
+from app.models.hypothesis import Hypothesis
+from app.models.incident_pattern import IncidentPattern
 
 
 class TestIncidentsAPI:
@@ -124,6 +129,116 @@ class TestIncidentsAPI:
         """Test validation errors."""
         response = await api_client.post("/api/v1/incidents", json=invalid_incident_payload)
         assert response.status_code == 422
+
+
+class TestDeleteIncident:
+    """DELETE /api/v1/incidents/{id} — on-demand erasure request."""
+
+    async def test_delete_nonexistent_incident_returns_404(self, api_client):
+        response = await api_client.request(
+            "DELETE",
+            "/api/v1/incidents/00000000-0000-0000-0000-000000000000",
+            json={"deleted_by": "sre@example.com"},
+        )
+        assert response.status_code == 404
+
+    async def test_delete_incident_returns_204_and_removes_it(self, api_client, sample_incident):
+        response = await api_client.request(
+            "DELETE",
+            f"/api/v1/incidents/{sample_incident.id}",
+            json={"deleted_by": "sre@example.com", "reason": "user erasure request"},
+        )
+        assert response.status_code == 204
+
+        get_response = await api_client.get(f"/api/v1/incidents/{sample_incident.id}")
+        assert get_response.status_code == 404
+
+    async def test_delete_cascades_to_hypotheses_and_actions(
+        self, api_client, test_db, incident_with_hypotheses
+    ):
+        incident_id = incident_with_hypotheses.id
+        response = await api_client.request(
+            "DELETE",
+            f"/api/v1/incidents/{incident_id}",
+            json={"deleted_by": "sre@example.com"},
+        )
+        assert response.status_code == 204
+
+        remaining = (
+            await test_db.execute(select(Hypothesis).where(Hypothesis.incident_id == incident_id))
+        ).scalars().all()
+        assert remaining == []
+
+    async def test_delete_writes_requested_and_deleted_audit_events(
+        self, api_client, test_db, sample_incident
+    ):
+        incident_id = sample_incident.id
+        service = sample_incident.affected_service
+
+        response = await api_client.request(
+            "DELETE",
+            f"/api/v1/incidents/{incident_id}",
+            json={"deleted_by": "sre@example.com", "reason": "erasure request"},
+        )
+        assert response.status_code == 204
+
+        rows = (
+            await test_db.execute(
+                select(AgentAuditLog).order_by(AgentAuditLog.created_at)
+            )
+        ).scalars().all()
+        events = {row.event_type: row for row in rows}
+
+        requested = events[AuditEventType.DATA_DELETION_REQUESTED.value]
+        assert requested.actor == "sre@example.com"
+        # ON DELETE SET NULL applies to every row referencing the incident at
+        # delete time — including this one, written earlier in the same
+        # transaction — so the FK is None; the id survives only in `details`.
+        assert requested.incident_id is None
+        assert requested.details["incident_id"] == str(incident_id)
+        assert requested.details["reason"] == "erasure request"
+
+        deleted = events[AuditEventType.DATA_DELETED.value]
+        assert deleted.actor == "sre@example.com"
+        # FK goes NULL once the incident row is gone — the id lives on in details instead.
+        assert deleted.incident_id is None
+        assert deleted.details["incident_id"] == str(incident_id)
+        assert deleted.details["affected_service"] == service
+
+    async def test_delete_rejects_malformed_actor(self, api_client, sample_incident):
+        response = await api_client.request(
+            "DELETE",
+            f"/api/v1/incidents/{sample_incident.id}",
+            json={"deleted_by": "not valid!!"},
+        )
+        assert response.status_code == 422
+
+    async def test_delete_does_not_touch_incident_patterns(
+        self, api_client, test_db, sample_incident
+    ):
+        """incident_patterns has no FK to Incident — deleting an incident must never touch it."""
+        pattern = IncidentPattern(
+            pattern_id="test-service:memory_leak",
+            name="Memory leak pattern",
+            category="memory_leak",
+            signal_indicators=["memory_usage"],
+        )
+        test_db.add(pattern)
+        await test_db.commit()
+
+        response = await api_client.request(
+            "DELETE",
+            f"/api/v1/incidents/{sample_incident.id}",
+            json={"deleted_by": "sre@example.com"},
+        )
+        assert response.status_code == 204
+
+        remaining = (
+            await test_db.execute(
+                select(IncidentPattern).where(IncidentPattern.pattern_id == "test-service:memory_leak")
+            )
+        ).scalar_one_or_none()
+        assert remaining is not None
 
 
 class TestIncidentsAPIErrorHandling:

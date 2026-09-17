@@ -125,3 +125,29 @@ Ran end-to-end against a real `kind` cluster (not just reviewed as code):
    any file under `app/worker/tasks/` calls bare `asyncio.run()` outside the
    one documented exception. Confirmed zero recurrences in 10+ minutes of
    live traffic after the fix (previously: 6 occurrences in 5 minutes).
+
+## MTTD/MTTR-by-stage benchmark (2026-09-14)
+
+`labs/kubernetes/benchmark-repeat.ps1 -Runs 12 -QuietSec 330` against a real
+`crashloop` fault on `payment-service`, one full stage-timestamped cycle per
+run (inject → first telemetry → incident → diagnosis → approval →
+remediation → recovery verified). **11/12 successful (92%)**:
+
+| Stage | Mean T+ | Median T+ | Stdev |
+|---|---|---|---|
+| first telemetry change | 6.7s | 4.9s | 2.6s |
+| incident detected (MTTD) | 44.6s | 44.9s | 2.2s |
+| diagnosis complete | 53.2s | 50.5s | 3.5s |
+| approved | 53.2s | 50.5s | 3.5s |
+| remediation executed | 53.3s | 50.6s | 3.6s |
+| recovery verified (MTTR) | 88.3s | 85.6s | 3.6s |
+
+Full per-run detail in `labs/kubernetes/results/2026-09-14_094001-summary.md`.
+The one failure (run 2) stalled at `incident_detected` — not yet root-caused,
+worth another look before citing 100%.
+
+Found mid-run: the kind lab's own Prometheus (`manifests/observability.yaml`)
+had no `PersistentVolumeClaim` for `/prometheus` — any pod restart (e.g. a
+Docker Desktop restart, not just `kind delete cluster`) silently wiped the
+anomaly detector's baseline window. Fixed by adding a 1Gi PVC on the default
+`local-path` storage class; applied live and confirmed bound.

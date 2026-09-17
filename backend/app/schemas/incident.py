@@ -111,6 +111,26 @@ class IncidentFilter(BaseModel):
         return v
 
 
+_ACTOR_PATTERN = re.compile(r"^[\w.\-@+]{2,255}$")
+
+
+class IncidentDeleteRequest(BaseModel):
+    """Schema for DELETE /incidents/{id} — on-demand erasure request."""
+
+    deleted_by: str = Field(..., min_length=2, max_length=255)
+    reason: str | None = Field(None, max_length=1000)
+
+    @field_validator("deleted_by")
+    @classmethod
+    def validate_deleted_by(cls, v: str) -> str:
+        """Mirrors ActionApprove/ActionReject's actor validation (S4 fix)."""
+        if not _ACTOR_PATTERN.match(v):
+            raise ValueError(
+                "deleted_by must be a valid email or username (letters, digits, . _ - @ only)"
+            )
+        return v
+
+
 class AnalysisAcceptedResponse(BaseModel):
     """202 response from POST /incidents/{id}/analyze."""
 

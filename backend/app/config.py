@@ -268,6 +268,14 @@ class Settings(BaseSettings):
             "Compliance-sensitive — confirm your retention policy before setting this."
         ),
     )
+    incident_retention_days: int = Field(
+        default=0, ge=0,
+        description=(
+            "Auto-delete RESOLVED/FAILED/ESCALATED incidents older than N days. "
+            "0 = disabled. Active incidents are never swept regardless of age — "
+            "only terminal-status incidents are eligible."
+        ),
+    )
 
     # OpenTelemetry / Distributed Tracing
     otel_enabled: bool = Field(

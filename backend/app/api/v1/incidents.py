@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.rate_limit import llm_rate_limit
 from app.database import get_db
+from app.models.audit_log import AuditEventType
 from app.models.incident import Incident, IncidentSeverity, IncidentStatus
 from app.models.incident_event import IncidentEvent, IncidentEventType
 from app.schemas.assignment import (
@@ -20,11 +21,13 @@ from app.schemas.assignment import (
 from app.schemas.incident import (
     AnalysisAcceptedResponse,
     IncidentCreate,
+    IncidentDeleteRequest,
     IncidentListResponse,
     IncidentResponse,
     IncidentUpdate,
     IncidentWithRelations,
 )
+from app.services.audit_service import write_audit_log
 from app.services.incident_assigner import incident_assigner
 
 logger = logging.getLogger(__name__)
@@ -293,6 +296,60 @@ async def analyze_incident(
         "incident_id": str(incident_id),
         "poll": f"/api/v1/incidents/{incident_id}",
     }
+
+
+@router.delete("/{incident_id}", status_code=204)
+async def delete_incident(
+    incident_id: UUID,
+    deletion: IncidentDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Permanently delete an incident and its hypotheses/actions/events/reviews.
+
+    On-demand erasure request (DPDP-style right to erasure) — distinct from the
+    automatic age-based retention sweep in worker/tasks/monitoring.py, which only
+    ever sweeps terminal-status incidents. incident_patterns (the anonymized,
+    learned RAG pattern) has no FK to Incident and is never touched by this.
+    """
+    stmt = select(Incident).where(Incident.id == incident_id)
+    result = await db.execute(stmt)
+    incident = result.scalar_one_or_none()
+
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    affected_service = incident.affected_service
+
+    # incident_id isn't passed as the FK on either event: agent_audit_logs'
+    # incident_id is ON DELETE SET NULL, and that cascade applies to every row
+    # referencing the incident at delete time — including one written earlier
+    # in this same transaction. The id can only survive in `details`.
+    await write_audit_log(
+        db,
+        event_type=AuditEventType.DATA_DELETION_REQUESTED,
+        actor=deletion.deleted_by,
+        outcome="success",
+        details={
+            "incident_id": str(incident_id),
+            "reason": deletion.reason,
+            "affected_service": affected_service,
+        },
+    )
+
+    await db.delete(incident)
+
+    await write_audit_log(
+        db,
+        event_type=AuditEventType.DATA_DELETED,
+        actor=deletion.deleted_by,
+        outcome="success",
+        details={"incident_id": str(incident_id), "affected_service": affected_service},
+    )
+
+    await db.commit()
+
+    logger.info(f"Deleted incident {incident_id}", extra={"incident_id": str(incident_id)})
 
 
 # ============================================================================

@@ -6,6 +6,16 @@ param(
 
 $namespace = "airra-lab"
 
+# ponytail: kubectl silently keeps whatever context was last active (e.g.
+# Docker Desktop's own "docker-desktop" cluster after a restart) -- fail
+# loud instead of running fault injection against the wrong cluster.
+$context = kubectl config current-context 2>$null
+if ($context -ne "kind-airra-lab") {
+    Write-Host "Current kubectl context is '$context', switching to 'kind-airra-lab'..."
+    kubectl config use-context kind-airra-lab
+    if (-not $?) { throw "kind-airra-lab context not found. Create the cluster first (see labs/kubernetes/README.md)." }
+}
+
 switch ($Scenario) {
     "crashloop" {
         kubectl -n $namespace set env deployment/payment-service CRASH_LOOP=true

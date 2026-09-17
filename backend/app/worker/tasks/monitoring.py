@@ -98,6 +98,7 @@ async def _retention_cleanup() -> dict:
     from app.config import settings
     from app.database import get_db_context
     from app.models.audit_log import AgentAuditLog
+    from app.models.incident import Incident, IncidentStatus
     from app.models.incident_event import IncidentEvent
     from app.models.notification import Notification
 
@@ -116,6 +117,22 @@ async def _retention_cleanup() -> dict:
             cutoff = now - timedelta(days=retention_days)
             result = await db.execute(delete(model).where(model.created_at < cutoff))
             deleted[model.__tablename__] = result.rowcount
+
+        # Incident retention is age + terminal-status filtered — unlike the pure
+        # log tables above, an in-flight incident (ANALYZING, PENDING_APPROVAL,
+        # EXECUTING, ...) must never be swept regardless of age.
+        if settings.incident_retention_days > 0:
+            cutoff = now - timedelta(days=settings.incident_retention_days)
+            result = await db.execute(
+                delete(Incident).where(
+                    Incident.created_at < cutoff,
+                    Incident.status.in_(
+                        (IncidentStatus.RESOLVED, IncidentStatus.FAILED, IncidentStatus.ESCALATED)
+                    ),
+                )
+            )
+            deleted[Incident.__tablename__] = result.rowcount
+
         await db.commit()
 
     if deleted:

@@ -16,6 +16,7 @@ from app.core.simulation.scenario_definitions import (
     ScenarioDifficulty,
     ScenarioTag,
 )
+from app.config import settings
 from app.services.llm_client import LLMClient, get_llm_client
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,9 @@ class LLMScenarioGenerator:
         Args:
             llm_client: LLM client instance (uses default if not provided)
         """
-        self.llm_client = llm_client or get_llm_client()
+        # Demo/simulation scenario generation, same tier as ai_incident_generator —
+        # not real incident reasoning, so it shouldn't default to the reasoning model.
+        self.llm_client = llm_client or get_llm_client(model=settings.llm_generator_model)
 
     async def generate(
         self,

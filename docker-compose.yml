@@ -12,6 +12,9 @@ x-backend-env: &backend-env
   # override in .env (e.g. AIRRA_LLM_MODEL=llama-3.1-8b-instant) for free-tier keys.
   AIRRA_LLM_MODEL: ${AIRRA_LLM_MODEL:-llama-3.3-70b-versatile}
   AIRRA_LLM_GENERATOR_MODEL: ${AIRRA_LLM_GENERATOR_MODEL:-llama-3.1-8b-instant} # creative tasks — Groq free tier
+  # Circuit breaker: 0 = unbounded. Set nonzero so a stuck retry loop or a
+  # misconfigured provider can't burn the whole daily quota unnoticed.
+  AIRRA_DAILY_TOKEN_BUDGET: ${AIRRA_DAILY_TOKEN_BUDGET:-500000}
  
   AIRRA_OPENAI_API_KEY: ${AIRRA_OPENAI_API_KEY}
   AIRRA_SLACK_WEBHOOK_URL: ${AIRRA_SLACK_WEBHOOK_URL:-}

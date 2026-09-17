@@ -523,13 +523,13 @@ Anomaly #{i}:
                 "Based on the anomalies above, generate 2-5 hypotheses for the root cause.",
                 "",
                 "For each hypothesis:",
-                "1. Provide a clear description of what you think is happening",
+                "1. Provide a clear description of what you think is happening (1-2 sentences)",
                 "2. Categorize the issue (memory_leak, cpu_spike, network_issue, etc.)",
-                "3. List the supporting evidence from the anomalies with relevance scores (0.0-1.0)",
-                "4. Explain your reasoning (chain-of-thought)",
+                "3. List at most 4 supporting evidence items, highest relevance first (0.0-1.0)",
+                "4. Explain your reasoning in 2-4 sentences (chain-of-thought, not an essay)",
                 "",
                 "Note: Confidence scores will be calculated deterministically based on your evidence.",
-                "Focus on providing high-quality evidence and reasoning.",
+                "Favor precision over volume — a few well-chosen evidence items outscore many weak ones.",
             ]
         )
 

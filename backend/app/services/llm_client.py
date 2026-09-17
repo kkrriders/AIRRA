@@ -149,6 +149,45 @@ def extract_json_from_llm_response(content: str) -> str:
     return content
 
 
+def _compact_schema(schema: dict) -> dict:
+    """Strip keys from a Pydantic JSON schema that cost tokens but tell the
+    model nothing it doesn't already get from the field name + description:
+    "title" (auto-generated from the field name — redundant) and Pydantic's
+    "additionalProperties": false noise on every object. Recurses through
+    nested $defs/properties/items.
+    """
+    if isinstance(schema, dict):
+        schema = {
+            k: _compact_schema(v)
+            for k, v in schema.items()
+            if k not in ("title", "additionalProperties")
+        }
+    elif isinstance(schema, list):
+        schema = [_compact_schema(v) for v in schema]
+    return schema
+
+
+def _append_schema_instructions(system_prompt: str | None, response_model: type[BaseModel]) -> str:
+    """Append the JSON-schema instructions for a structured call to the system prompt.
+
+    Provider-agnostic token cost fix: this block is static per response_model and
+    resent on every call regardless of which LLM provider is configured, so it's
+    minified (compact JSON, no indent whitespace) and stripped of schema keys
+    that don't aid the model (see _compact_schema) — roughly halves its size.
+
+    Also kept out of the per-call user prompt so it rides along with the system
+    prompt, which additionally gets a cache_control breakpoint on Anthropic
+    (see AnthropicClient._generate_raw) — a bonus on that one provider, not a
+    dependency for the token savings here.
+    """
+    schema = _compact_schema(response_model.model_json_schema())
+    instructions = (
+        "Respond with valid JSON conforming to this schema (compact, no extra text):\n"
+        f"{json.dumps(schema, separators=(',', ':'))}"
+    )
+    return f"{system_prompt}\n\n{instructions}" if system_prompt else instructions
+
+
 class LLMResponse(BaseModel):
     """Standard LLM response with metadata."""
 
@@ -160,7 +199,12 @@ class LLMResponse(BaseModel):
 
 
 class LLMCache:
-    """Redis-backed semantic cache for LLM responses.
+    """Redis-backed exact-match cache for LLM responses (hashes the full prompt
+    string — not semantic/similarity-based, so it only hits on byte-identical
+    repeat calls, e.g. retries or duplicate requests. Prompts embedding
+    per-incident data like timestamps or metric values will never repeat and
+    won't hit this cache; for that static-prefix case use Anthropic prompt
+    caching instead, see AnthropicClient._generate_raw).
 
     Uses the application-wide shared Redis pool from app.core.redis so no
     separate connection pool is created per feature. The pool lifecycle
@@ -355,11 +399,23 @@ class AnthropicClient(LLMClient):
             # NEW-18 fix: use explicit None check — `temperature or self.temperature`
             # treats 0.0 (fully deterministic) as falsy and falls back to default.
             effective_temp = temperature if temperature is not None else self.temperature
+
+            # Mark the system prompt as an ephemeral cache breakpoint. System
+            # prompts are static per call site (role description + JSON schema),
+            # so repeated calls (every incident analysis, every AI-generated
+            # incident) hit the cache instead of paying full input-token price
+            # for identical text. Below Anthropic's ~1024-token cache minimum
+            # this is a silent no-op, so it's safe to always set.
+            system: str | list[dict] = (
+                [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]
+                if system_prompt
+                else ""
+            )
             response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=effective_temp,
-                system=system_prompt or "",
+                system=system,  # type: ignore[arg-type]
                 messages=messages,  # type: ignore[arg-type]
             )
 
@@ -388,25 +444,18 @@ class AnthropicClient(LLMClient):
         Generate structured output conforming to a Pydantic model.
 
         Uses JSON schema in the prompt to guide the model.
+
+        The schema/instructions are static per response_model, so they go in the
+        *system* prompt (cacheable prefix — see AnthropicClient._generate_raw)
+        rather than glued onto the per-call user prompt, which varies every time
+        and would defeat prompt caching if the schema lived there instead.
         """
-        # Create JSON schema from Pydantic model
-        schema = response_model.model_json_schema()
-
-        # Enhance prompt with schema
-        enhanced_prompt = f"""
-{prompt}
-
-You must respond with valid JSON that conforms to this schema:
-
-{json.dumps(schema, indent=2)}
-
-Respond ONLY with the JSON object, no additional text.
-"""
+        enhanced_system_prompt = _append_schema_instructions(system_prompt, response_model)
 
         # Get response (this uses generate() which handles caching)
         llm_response = await self.generate(
-            prompt=enhanced_prompt,
-            system_prompt=system_prompt,
+            prompt=prompt,
+            system_prompt=enhanced_system_prompt,
             temperature=temperature,
         )
 
@@ -493,19 +542,12 @@ class OpenAIClient(LLMClient):
         temperature: float | None = None,
     ) -> tuple[T, LLMResponse]:
         """Generate structured output using OpenAI's JSON mode."""
-        schema = response_model.model_json_schema()
-
-        enhanced_prompt = f"""
-{prompt}
-
-Respond with valid JSON conforming to this schema:
-{json.dumps(schema, indent=2)}
-"""
+        enhanced_system_prompt = _append_schema_instructions(system_prompt, response_model)
 
         # Uses generate() which handles caching
         llm_response = await self.generate(
-            prompt=enhanced_prompt,
-            system_prompt=system_prompt,
+            prompt=prompt,
+            system_prompt=enhanced_system_prompt,
             temperature=temperature,
         )
 

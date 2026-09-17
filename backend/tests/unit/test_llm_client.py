@@ -1,4 +1,5 @@
 """Unit tests for LLM client."""
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -52,6 +53,67 @@ class TestAnthropicClient:
         assert client.model == "claude-3-opus-20240229"
         assert client.temperature == 0.5
         assert client.max_tokens == 2048
+
+    async def test_system_prompt_gets_cache_control(self, mock_anthropic_response):
+        """System prompt must be sent as a cache_control ephemeral block, so
+        repeated calls (every incident) don't re-bill identical system-prompt
+        tokens."""
+        with patch('app.services.llm_client.AsyncAnthropic') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_anthropic_response)
+            mock_client_class.return_value = mock_client
+
+            client = AnthropicClient(api_key="test-key")
+            await client.generate(prompt="Test prompt", system_prompt="You are an SRE.")
+
+            _, kwargs = mock_client.messages.create.call_args
+            assert kwargs["system"] == [
+                {"type": "text", "text": "You are an SRE.", "cache_control": {"type": "ephemeral"}}
+            ]
+
+    def test_schema_compaction_strips_bloat_and_shrinks_output(self):
+        """Provider-agnostic cost fix: the schema block sent on every structured
+        call (any provider) should drop redundant "title"/"additionalProperties"
+        keys and use compact separators, not pretty-printed JSON."""
+        from app.services.llm_client import _append_schema_instructions
+        from app.core.reasoning.hypothesis_generator import HypothesesResponseLLM
+
+        instructions = _append_schema_instructions(None, HypothesesResponseLLM)
+        raw_schema = json.dumps(HypothesesResponseLLM.model_json_schema(), indent=2)
+
+        assert '"title":' not in instructions
+        assert '"additionalProperties":' not in instructions
+        assert len(instructions) < len(raw_schema)  # compacted, not pretty-printed
+        assert '"overall_assessment"' in instructions  # still fully descriptive
+
+    async def test_generate_structured_puts_schema_in_system_prompt(self, mock_anthropic_response):
+        """The JSON schema is static per response_model — it belongs in the
+        (cacheable) system prompt, not glued onto the per-call user prompt."""
+        from pydantic import BaseModel
+
+        class _Dummy(BaseModel):
+            hypotheses: list = []
+            overall_assessment: str = ""
+
+        with patch('app.services.llm_client.AsyncAnthropic') as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_anthropic_response)
+            mock_client_class.return_value = mock_client
+
+            client = AnthropicClient(api_key="test-key")
+            await client.generate_structured(
+                prompt="Analyze this incident.",
+                response_model=_Dummy,
+                system_prompt="You are an SRE.",
+            )
+
+            _, kwargs = mock_client.messages.create.call_args
+            user_message = kwargs["messages"][0]["content"]
+            system_text = kwargs["system"][0]["text"]
+
+            assert user_message == "Analyze this incident."
+            assert "schema" in system_text.lower()
+            assert '"overall_assessment"' in system_text
 
     def test_strips_markdown_code_blocks(self):
         """Test that markdown code blocks are stripped from JSON."""
